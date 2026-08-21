@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+@theme {
+  /* Fundo — azul-petróleo muito escuro, não preto puro */
+  --color-fundo: #05080d;
+  --color-fundo-2: #080d15;
+  --color-superficie: #0c141f;
+  --color-superficie-2: #121c2a;
+  --color-linha: #1a2938;
+  --color-linha-fraca: #131e2b;
+
+  /* Tinta com viés frio */
+  --color-tinta: #dfe8f3;
+  --color-tinta-media: #93a7be;
+  --color-tinta-fraca: #5d7189;
+
+  /* Estado */
+  --color-reator: #3f9ec4;
+  --color-reator-claro: #6fd3f5;
+  --color-atencao: #d1a054;
+  --color-risco: #cc6a5e;
+  --color-ok: #55b087;
+}
+
+:root {
+  --reator: #3f9ec4;
+  --reator-claro: #6fd3f5;
+  --atencao: #d1a054;
+  --risco: #cc6a5e;
+  --ok: #55b087;
+  --tinta-fraca: #5d7189;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--color-fundo);
+  color: var(--color-tinta);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--fonte-sans), system-ui, sans-serif;
+  /* Malha técnica de fundo — muito baixa, dá profundidade sem ruído */
+  background-image:
+    linear-gradient(var(--color-linha-fraca) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-linha-fraca) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: -1px -1px;
+}
+
+.mono {
+  font-family: var(--fonte-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ══════════════════════════════ REATOR ══════════════════════════════ */
+
+@keyframes respirar {
+  0%, 100% { transform: scale(1); opacity: 0.88; }
+  50%      { transform: scale(1.035); opacity: 1; }
+}
+@keyframes girar {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes girar-inv {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes pulsar {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.07); opacity: 1; }
+}
+@keyframes varrer {
+  0%   { transform: translateY(-26px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateY(46px); opacity: 0; }
+}
+@keyframes surgir-ramo {
+  from { opacity: 0; transform: scale(0.86); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes atenuar {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.9; }
+}
+
+/* Núcleo: respira devagar quando ocioso — sistema vivo, não parado */
+.reator .nucleo { animation: respirar 5s ease-in-out infinite; }
+.reator.est-pensando .nucleo,
+.reator.est-planejando .nucleo { animation: pulsar 1.5s ease-in-out infinite; }
+.reator.est-executando .nucleo { animation: pulsar 0.9s ease-in-out infinite; }
+.reator.est-erro .nucleo,
+.reator.est-aguardando_aprovacao .nucleo { animation: atenuar 2.6s ease-in-out infinite; }
+.reator.est-offline .nucleo { animation: none; }
+/* voz controla a escala por amplitude real — sem animação concorrente */
+.reator.est-ouvindo .nucleo,
+.reator.est-falando .nucleo { animation: none; }
+
+.reator .anel-analitico { animation: girar 9s linear infinite; }
+.reator .anel-contra    { animation: girar-inv 14s linear infinite; }
+.reator .anel-exec      { animation: girar 1.7s linear infinite; }
+.reator .orbita         { animation: girar linear infinite; }
+.reator .varredura      { animation: varrer 2.1s ease-in-out infinite; }
+.reator .ramo           { animation: surgir-ramo 0.4s ease-out backwards; }
+
+/* ══════════════════════════════ ENTRADA ══════════════════════════════ */
+
+@keyframes entrar-baixo {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes entrar-lado {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes aparecer {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.entra      { animation: entrar-baixo 0.28s ease-out backwards; }
+.entra-lado { animation: entrar-lado 0.22s ease-out backwards; }
+.aparece    { animation: aparecer 0.4s ease-out backwards; }
+
+/* ══════════════════════════════ HUD ══════════════════════════════ */
+
+.painel {
+  background: color-mix(in srgb, var(--color-superficie) 78%, transparent);
+  border: 1px solid var(--color-linha);
+  backdrop-filter: blur(6px);
+}
+
+.canto {
+  position: relative;
+}
+.canto::before,
+.canto::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-color: var(--color-reator);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.canto::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+.canto::after  { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+
+.rotulo {
+  font-family: var(--fonte-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-tinta-fraca);
+}
+
+/* ══════════════════════════════ ROLAGEM ══════════════════════════════ */
+
+.rolagem { scrollbar-width: thin; scrollbar-color: var(--color-linha) transparent; }
+.rolagem::-webkit-scrollbar { width: 7px; height: 7px; }
+.rolagem::-webkit-scrollbar-track { background: transparent; }
+.rolagem::-webkit-scrollbar-thumb { background: var(--color-linha); border-radius: 4px; }
+.rolagem::-webkit-scrollbar-thumb:hover { background: var(--color-tinta-fraca); }
+
+/* ══════════════════════════════ FOCO ══════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid var(--color-reator-claro);
+  outline-offset: 2px;
+}
+
+/* ══════════════════════════════ MOVIMENTO REDUZIDO ══════════════════════════════
+   Estado continua legível por cor, rótulo e layout — nunca só por movimento. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .reator .orbita,
+  .reator .varredura { display: none; }
+}

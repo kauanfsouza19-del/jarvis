@@ -1,0 +1,31 @@
+node_modules/
+.next/
+out/
+build/
+
+# Credenciais — nunca commitar
+.env
+.env.local
+.env*.local
+!.env.local.exemplo
+
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# banco local — barra inicial de propósito: "dados/" sem âncora casa com pasta
+# de qualquer profundidade e engolia src/lib/dados/, a camada de dados inteira
+# (esquema, repositório, busca), que ficou fora do git sem ninguém notar.
+/dados/
+
+# caminhos de maquina — nunca versionados
+scripts/projetos.local.json
+
+# backups locais (scripts/backup.mjs) — desde a Fase 16 moraram pra dentro
+# de dados/backups/ (já coberto por /dados/ acima); esta entrada continua
+# aqui só como rede de segurança pra quem tiver BACKUPS_PATH apontando pra
+# fora de dados/.
+/backups/
