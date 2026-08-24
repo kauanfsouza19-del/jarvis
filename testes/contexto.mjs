@@ -140,6 +140,17 @@ ok("pergunta geral não inventa projeto", perguntaGeral1.projetoNome === null);
 const perguntaGeral2 = resolverContexto("Explique recursão.", lexico);
 ok("'Explique recursão' também não trava (RESPONDER genérico, forma 'explique')", perguntaGeral2.confianca !== "BAIXA", perguntaGeral2.confianca);
 
+// Achado real (Fase 19): "fazer" é ao mesmo tempo verbo de ordem
+// (EXECUTAR: "faça isso") e verbo de capacidade em pergunta ("capaz de
+// fazer") — sem RESPONDER checado antes de EXECUTAR, esta frase-exemplo
+// da própria missão cairia em EXECUTAR/BAIXA e travaria pedindo projeto.
+const perguntaCapacidade = resolverContexto("Explique o que o Jarvis é capaz de fazer hoje.", lexico);
+ok(
+  "pergunta de capacidade com 'fazer' não vira EXECUTAR/BAIXA — RESPONDER vence",
+  perguntaCapacidade.acao === "RESPONDER" && perguntaCapacidade.confianca !== "BAIXA",
+  `acao=${perguntaCapacidade.acao} confianca=${perguntaCapacidade.confianca}`,
+);
+
 // "Jarvis" É um projeto real cadastrado — isto já deveria (e continua)
 // resolvendo com confiança ALTA, nomeando o projeto certo, nunca BAIXA.
 const perguntaSobreJarvis = resolverContexto("Me explique como está o Jarvis hoje.", lexico);

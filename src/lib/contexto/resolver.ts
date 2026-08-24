@@ -215,19 +215,31 @@ const INTENCOES: Array<[Intencao, RegExp]> = [
 ];
 
 const ACOES: Array<[Acao, RegExp]> = [
-  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|gera|gerar|escreve|escrever|manda|enviar|publica|implementa|corrig|ajusta|muda|mudar|altera)/],
-  ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verifica|olha|conferir)/],
-  ["PLANEJAR", /\b(plane|planeja|estrutura|organiza|define|definir|decide|decidir|pensa|pensar em|como (eu )?(fa[cç]o|devo)|qual (o )?melhor|estrat[eé]gi)/],
-  ["REVISAR", /\b(revis|melhor(a|ar)|otimiz|refina|ajust|aprimor)/],
+  // RESPONDER vem ANTES de EXECUTAR (achado real na Fase 19, testando a
+  // própria frase-exemplo da missão: "explique o que o Jarvis é capaz de
+  // FAZER hoje"). "fazer" é ao mesmo tempo o verbo genérico de ordem
+  // ("faça isso") e o verbo de capacidade em pergunta ("o que você faz",
+  // "capaz de fazer") — ambíguo por natureza da língua. Checar RESPONDER
+  // primeiro resolve a pergunta corretamente sem exigir NLP de verdade:
+  // os verbos realmente inequívocos de EXECUTAR (cria, corrige, publica,
+  // manda, roda, sobe, monta, gera, escreve, implementa, ajusta, muda,
+  // altera) não aparecem no vocabulário de RESPONDER, então uma ordem
+  // real ("corrija X") nunca é desviada — só "fazer" tem essa ambiguidade,
+  // e ela sempre resolve a favor de não travar uma pergunta comum.
+  //
   // expli(c|qu)\w* (achado real na Fase 19): "explicar" muda a raiz na
   // conjugação formal por regra ortográfica do português (c→qu antes de
   // e/i, pra manter o som de /k/) — "explica" (informal) vs "explique"
   // (formal/você, a forma mais comum). Um stem só ("explic\w*") nunca
   // casava "explique"/"expliquei"/"expliquem". "como (está|vai|anda)"
   // também faltava — "como está o Jarvis" é pergunta de status, não a
-  // mesma coisa que "como eu faço/devo" (que já é PLANEJAR, checado antes
-  // deste na lista e não colide: exige "faço"/"devo" depois de "como").
+  // mesma coisa que "como eu faço/devo" (que já é PLANEJAR e não colide:
+  // exige "faço"/"devo" depois de "como").
   ["RESPONDER", /\b(o que [eé]|quanto|quando|quem|onde|quais|como (voc[eê]\s+)?(est[aá]|vai|anda)|me (expli(c|qu)\w*|diz|conta)|expli(c|qu)\w*)/],
+  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|gera|gerar|escreve|escrever|manda|enviar|publica|implementa|corrig|ajusta|muda|mudar|altera)/],
+  ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verifica|olha|conferir)/],
+  ["PLANEJAR", /\b(plane|planeja|estrutura|organiza|define|definir|decide|decidir|pensa|pensar em|como (eu )?(fa[cç]o|devo)|qual (o )?melhor|estrat[eé]gi)/],
+  ["REVISAR", /\b(revis|melhor(a|ar)|otimiz|refina|ajust|aprimor)/],
 ];
 
 // "agora" sozinho é ambíguo de propósito — falso positivo achado testando ao
