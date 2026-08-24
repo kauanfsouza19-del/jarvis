@@ -128,13 +128,36 @@ export async function sincronizarVaultGit(): Promise<ResultadoSincronizacao> {
     garantirGitignoreDoVault();
 
     const status = await git(["status", "--porcelain"]);
-    if (!status.trim()) {
-      gravarSucesso(false);
-      return { ok: true, commitado: false }; // nada mudou desde a última sincronização
+    let commitouAgora = false;
+    if (status.trim()) {
+      await git(["add", "-A"]);
+      await git(["commit", "-m", `sync: ${new Date().toISOString()}`]);
+      commitouAgora = true;
     }
 
-    await git(["add", "-A"]);
-    await git(["commit", "-m", `sync: ${new Date().toISOString()}`]);
+    // Achado real (Fase 18): mesmo sem mudança NOVA no working tree, pode
+    // existir commit local de uma tentativa anterior que commitou mas
+    // falhou só no push (ex: rede caiu, chave ainda não cadastrada no
+    // GitHub naquele momento) — nunca fica esse commit preso pra sempre
+    // só porque "nada mudou desta vez". `rev-list` conta commits que
+    // existem aqui e ainda não existem no remoto; se a branch remota nem
+    // existe ainda (primeiro push), a comparação falha e tratamos como
+    // "tem o que enviar" também.
+    let temAlgoPraEnviar = commitouAgora;
+    if (!temAlgoPraEnviar) {
+      try {
+        await git(["fetch", "origin", "main"]);
+        const naFrente = await git(["rev-list", "--count", "origin/main..HEAD"]);
+        temAlgoPraEnviar = parseInt(naFrente.trim(), 10) > 0;
+      } catch {
+        temAlgoPraEnviar = true; // remoto sem a branch main ainda (primeiro push) — tenta enviar
+      }
+    }
+
+    if (!temAlgoPraEnviar) {
+      gravarSucesso(false);
+      return { ok: true, commitado: false }; // nada novo e nada pendente de envio
+    }
 
     try {
       await git(["push", "-u", "origin", "main"]);
