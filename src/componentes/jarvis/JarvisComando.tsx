@@ -22,13 +22,7 @@ import {
   destaquePorTexto,
 } from "./JarvisPaineis";
 import { JarvisBentoGrid } from "./JarvisBentoGrid";
-import {
-  JarvisActionStream,
-  JarvisMemoryTrace,
-  JarvisStatus,
-  JarvisToolIndicator,
-  type Saude,
-} from "./JarvisHud";
+import { JarvisActionStream, JarvisMemoryTrace, JarvisToolIndicator } from "./JarvisHud";
 import { useJarvis } from "./useJarvis";
 import { useVoz } from "./useVoz";
 import { JarvisExecucao } from "./JarvisTarefa";
@@ -92,7 +86,6 @@ export function JarvisComando({ onAbrirSistema }: { onAbrirSistema: (aba?: strin
   const [conversas, setConversas] = useState<ConversaMeta[]>([]);
   const [conversaId, setConversaId] = useState<string | null>(null);
   const [turnos, setTurnos] = useState<Turno[]>([]);
-  const [saude, setSaude] = useState<Saude | null>(null);
   const [contextoAtual, setContextoAtual] = useState<ContextoCliente | null>(null);
   const [detalheContexto, setDetalheContexto] = useState(false);
 
@@ -121,12 +114,8 @@ export function JarvisComando({ onAbrirSistema }: { onAbrirSistema: (aba?: strin
 
   useEffect(() => {
     void (async () => {
-      const [c, s] = await Promise.all([
-        fetch("/api/conversas").then((r) => r.json()),
-        fetch("/api/saude").then((r) => r.json()),
-      ]);
+      const c = await fetch("/api/conversas").then((r) => r.json());
       setConversas(c.conversas ?? []);
-      setSaude(s);
       if (c.conversas?.[0]) void abrir(c.conversas[0].id);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,11 +324,6 @@ export function JarvisComando({ onAbrirSistema }: { onAbrirSistema: (aba?: strin
         <PainelRiscos dados={warRoom} />
         <PainelMemoriaRecente memorias={memoriasRecentes} />
       </JarvisBentoGrid>
-
-      <div>
-        <p className="rotulo mb-1.5">SISTEMA</p>
-        <JarvisStatus saude={saude} />
-      </div>
 
       {conversas.length > 0 && (
         <div className="min-h-0">

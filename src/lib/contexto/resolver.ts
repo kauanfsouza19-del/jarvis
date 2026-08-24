@@ -219,7 +219,15 @@ const ACOES: Array<[Acao, RegExp]> = [
   ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verifica|olha|conferir)/],
   ["PLANEJAR", /\b(plane|planeja|estrutura|organiza|define|definir|decide|decidir|pensa|pensar em|como (eu )?(fa[cç]o|devo)|qual (o )?melhor|estrat[eé]gi)/],
   ["REVISAR", /\b(revis|melhor(a|ar)|otimiz|refina|ajust|aprimor)/],
-  ["RESPONDER", /\b(o que [eé]|quanto|quando|quem|onde|quais|me (explica|diz|conta)|explica)/],
+  // expli(c|qu)\w* (achado real na Fase 19): "explicar" muda a raiz na
+  // conjugação formal por regra ortográfica do português (c→qu antes de
+  // e/i, pra manter o som de /k/) — "explica" (informal) vs "explique"
+  // (formal/você, a forma mais comum). Um stem só ("explic\w*") nunca
+  // casava "explique"/"expliquei"/"expliquem". "como (está|vai|anda)"
+  // também faltava — "como está o Jarvis" é pergunta de status, não a
+  // mesma coisa que "como eu faço/devo" (que já é PLANEJAR, checado antes
+  // deste na lista e não colide: exige "faço"/"devo" depois de "como").
+  ["RESPONDER", /\b(o que [eé]|quanto|quando|quem|onde|quais|como (voc[eê]\s+)?(est[aá]|vai|anda)|me (expli(c|qu)\w*|diz|conta)|expli(c|qu)\w*)/],
 ];
 
 // "agora" sozinho é ambíguo de propósito — falso positivo achado testando ao
@@ -424,11 +432,24 @@ export function resolverContexto(
   const nomeouEntidade = Boolean(cliente || projetoDireto);
   const herdouEntidade = Boolean(!nomeouEntidade && (projetoId || clienteId));
   const temIntencao = intencao !== "INDEFINIDA";
+  // Achado real (Fase 19): uma pergunta comum — "explique recursão", "como
+  // está o Jarvis hoje", "o que é X" — nunca nomeia projeto/cliente E nunca
+  // bate nenhuma das 9 categorias de INTENCOES (que são todas de negócio de
+  // agência: prospecção, ads, criativo...). Isso sempre caía em BAIXA e
+  // travava a conversa numa pergunta de esclarecimento antes de chegar no
+  // modelo — mesmo pra pergunta que claramente não precisa de projeto
+  // nenhum pra ser respondida. AÇÃO=RESPONDER (o mesmo vocabulário que já
+  // reconhece "o que é/quanto/quando/quem/onde/quais/explica") é o sinal
+  // certo: perguntar-e-explicar nunca precisa de um alvo escopado, ao
+  // contrário de EXECUTAR ("corrija", "publica", "envia") que legitimamente
+  // pode precisar saber em qual sistema agir.
+  const perguntaGenerica = ac.valor === "RESPONDER";
 
   let confianca: Confianca;
   if (nomeouEntidade) confianca = "ALTA";
   else if (herdouEntidade && temIntencao) confianca = "MEDIA";
   else if (herdouEntidade || temIntencao) confianca = "MEDIA";
+  else if (perguntaGenerica) confianca = "MEDIA"; // conversa geral com o Jarvis — nunca bloqueia esperando projeto
   else confianca = "BAIXA";
 
   // Correção sem entidade nomeada é o pior caso: ele disse que erramos mas não

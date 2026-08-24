@@ -128,6 +128,28 @@ ok(
 );
 ok("BAIXA não inventa projeto", baixa.projetoNome === null);
 
+// Fase 19 — achado real: pergunta genérica travava em BAIXA/"qual
+// projeto?" antes de chegar no modelo, mesmo sem precisar de projeto
+// nenhum pra ser respondida. AÇÃO=RESPONDER agora vira MEDIA (nunca
+// pergunta de esclarecimento), sem projeto inventado.
+const perguntaGeral1 = resolverContexto("Como você está hoje?", lexico);
+ok("pergunta geral NÃO cai em BAIXA (não trava pedindo projeto)", perguntaGeral1.confianca !== "BAIXA", perguntaGeral1.confianca);
+ok("pergunta geral não gera pergunta de esclarecimento", perguntaGeral1.pergunta === null);
+ok("pergunta geral não inventa projeto", perguntaGeral1.projetoNome === null);
+
+const perguntaGeral2 = resolverContexto("Explique recursão.", lexico);
+ok("'Explique recursão' também não trava (RESPONDER genérico, forma 'explique')", perguntaGeral2.confianca !== "BAIXA", perguntaGeral2.confianca);
+
+// "Jarvis" É um projeto real cadastrado — isto já deveria (e continua)
+// resolvendo com confiança ALTA, nomeando o projeto certo, nunca BAIXA.
+const perguntaSobreJarvis = resolverContexto("Me explique como está o Jarvis hoje.", lexico);
+ok("pergunta sobre 'o Jarvis' reconhece o projeto de verdade (ALTA, não BAIXA)", perguntaSobreJarvis.confianca === "ALTA", perguntaSobreJarvis.confianca);
+ok("projeto identificado corretamente como JARVIS", perguntaSobreJarvis.projetoNome === "JARVIS", perguntaSobreJarvis.projetoNome ?? "null");
+
+// Continua BAIXA quando é EXECUTAR sem alvo — ação de verdade, não pergunta.
+const acaoSemAlvo = resolverContexto("Corrija esse problema na autenticação.", lexico);
+ok("ação sem projeto/cliente nomeado CONTINUA em BAIXA (não é pergunta, é ordem sem alvo)", acaoSemAlvo.confianca === "BAIXA", acaoSemAlvo.confianca);
+
 /* ── 3. modo interno, sem seletor ── */
 
 secao("3. Modo escolhido pelo sistema");
