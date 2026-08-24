@@ -39,6 +39,8 @@ secao("1. Registro — provedores e modelos reais, nenhum decorativo");
 {
   ok("Anthropic registrado", PROVEDORES.some((p) => p.id === "anthropic"));
   ok("OpenAI registrado (segundo provedor real, prova arquitetura multi-provedor)", PROVEDORES.some((p) => p.id === "openai"));
+  ok("Gemini registrado (terceiro provedor, Fase 17 — tier gratuito)", PROVEDORES.some((p) => p.id === "gemini"));
+  ok("modelo Gemini declara custo zero (tier gratuito real, não estimativa)", modelosDoProvedor("gemini").every((m) => m.custoPor1M.entrada === 0 && m.custoPor1M.saida === 0));
   ok("todo modelo aponta pra um provedor que existe no registro", MODELOS_REGISTRO.every((m) => PROVEDORES.some((p) => p.id === m.provedorId)));
   ok("existe pelo menos 1 modelo CHEAP, 1 BALANCED, 1 PREMIUM", ["CHEAP", "BALANCED", "PREMIUM"].every((t) => modelosPorTier(t).length > 0));
   ok("modelosDoProvedor('anthropic') retorna os 3 tiers", modelosDoProvedor("anthropic").length === 3, String(modelosDoProvedor("anthropic").length));
@@ -53,6 +55,13 @@ secao("2. Disponibilidade real — sem credencial neste ambiente, REQUIRES_CREDE
     ok("openai com credencial configurada → AVAILABLE", disponibilidadeDoProvedor("openai") === "AVAILABLE", disponibilidadeDoProvedor("openai"));
   }
   ok("provedor desconhecido → DISABLED (nunca lança)", disponibilidadeDoProvedor("provedor-que-nao-existe") === "DISABLED");
+
+  const semChaveGemini = !process.env.GOOGLE_GEMINI_API_KEY;
+  if (semChaveGemini) {
+    ok("gemini sem GOOGLE_GEMINI_API_KEY → REQUIRES_CREDENTIAL (nunca finge disponível)", disponibilidadeDoProvedor("gemini") === "REQUIRES_CREDENTIAL", disponibilidadeDoProvedor("gemini"));
+  } else {
+    ok("gemini com credencial configurada → AVAILABLE", disponibilidadeDoProvedor("gemini") === "AVAILABLE", disponibilidadeDoProvedor("gemini"));
+  }
 }
 
 secao("3. Estado transitório — fallback/downgrade testado de verdade com estado plantado (sem precisar de 2ª credencial real)");

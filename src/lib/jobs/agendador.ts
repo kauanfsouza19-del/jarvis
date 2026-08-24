@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "../dados/db";
 import { criarJob } from "./motor";
+import { sincronizarVaultGit, obsidianGitConfigurado } from "../obsidian/sync-git";
 
 /**
  * Scheduler mínimo, em processo (Fase 14) — não é cron distribuído nem
@@ -22,6 +23,11 @@ import { criarJob } from "./motor";
  */
 
 const INTERVALO_VERIFICACAO_MS = 5 * 60 * 1000;
+// Sincronização do vault Obsidian (Fase 17) — bem menos frequente que a
+// checagem de inteligência: notas mudam devagar, não precisa checar a
+// cada 5min. 30min é o suficiente pra chegar rápido no Obsidian local
+// sem gerar commit/push a cada mudancinha isolada.
+const INTERVALO_SYNC_OBSIDIAN_MS = 30 * 60 * 1000;
 let iniciado = false;
 
 /** Exportado para teste direto (sem esperar o intervalo real de 5min). */
@@ -47,6 +53,17 @@ async function tickInteligencia(): Promise<void> {
   }
 }
 
+async function tickSyncObsidian(): Promise<void> {
+  if (!obsidianGitConfigurado()) return; // opcional — silencioso quando não configurado, sem log repetitivo a cada 30min
+  try {
+    const r = await sincronizarVaultGit();
+    if (r.ok && r.commitado) console.log("[jarvis] vault Obsidian sincronizado (git push).");
+    if (!r.ok) console.error(`[jarvis] sincronização do vault Obsidian falhou: ${r.motivo}`);
+  } catch (e) {
+    console.error("[jarvis] agendador: falha inesperada sincronizando vault Obsidian:", e);
+  }
+}
+
 /**
  * Chamada uma vez no boot do servidor. Idempotente — se o hook de
  * instrumentação rodar mais de uma vez no mesmo processo (observado em
@@ -57,8 +74,10 @@ export function iniciarAgendador(): void {
   if (iniciado) return;
   iniciado = true;
   setInterval(() => void tickInteligencia(), INTERVALO_VERIFICACAO_MS);
+  setInterval(() => void tickSyncObsidian(), INTERVALO_SYNC_OBSIDIAN_MS);
   console.log(
-    `[jarvis] agendador iniciado — verifica fonte de inteligência vencida a cada ${INTERVALO_VERIFICACAO_MS / 60000}min. ` +
+    `[jarvis] agendador iniciado — verifica fonte de inteligência vencida a cada ${INTERVALO_VERIFICACAO_MS / 60000}min` +
+      `${obsidianGitConfigurado() ? `, sincroniza vault Obsidian a cada ${INTERVALO_SYNC_OBSIDIAN_MS / 60000}min` : " (sync do vault Obsidian desativado — OBSIDIAN_GIT_REMOTO não configurado)"}. ` +
       `Só funciona enquanto este processo está de pé — para sobreviver a reinício/desligamento, use o agendador do sistema operacional.`,
   );
 }

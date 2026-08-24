@@ -59,6 +59,11 @@ export type ModeloRegistro = {
 export const PROVEDORES: ProvedorRegistro[] = [
   { id: "anthropic", nomeExibicao: "Anthropic", credencialEnv: "ANTHROPIC_API_KEY" },
   { id: "openai", nomeExibicao: "OpenAI", credencialEnv: "OPENAI_API_KEY" },
+  // Fase 17 — prioridade explícita da missão: "priorize APIs gratuitas".
+  // Gemini Flash tem tier gratuito de verdade (ai.google.dev), diferente
+  // de Anthropic/OpenAI que são só pré-pago — por isso entra como CHEAP,
+  // preferido antes do gpt-4o-mini pago em modo ECONOMY (ver roteador-score.ts).
+  { id: "gemini", nomeExibicao: "Google Gemini", credencialEnv: "GOOGLE_GEMINI_API_KEY" },
 ];
 
 export const MODELOS_REGISTRO: ModeloRegistro[] = [
@@ -111,6 +116,20 @@ export const MODELOS_REGISTRO: ModeloRegistro[] = [
     janelaContexto: 128_000,
     capacidades: ["reasoning", "coding", "vision", "structured_output", "tool_calling"],
     latenciaClasse: "media",
+  },
+  // Gemini Flash — custo declarado como 0 porque o tier gratuito do
+  // ai.google.dev cobre uso pessoal de sobra; se a cota gratuita estourar,
+  // a própria API responde 429 (RESOURCE_EXHAUSTED) e o Router já sabe
+  // tratar isso como QUOTA_EXCEEDED (ver gemini.ts) — nunca finge uso
+  // ilimitado, só não cobra custo fictício enquanto está dentro da cota.
+  {
+    modeloId: "gemini-2.0-flash",
+    provedorId: "gemini",
+    tier: "CHEAP",
+    custoPor1M: { entrada: 0, saida: 0 },
+    janelaContexto: 1_000_000,
+    capacidades: ["reasoning", "coding", "vision", "structured_output", "tool_calling"],
+    latenciaClasse: "baixa",
   },
 ];
 

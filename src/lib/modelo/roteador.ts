@@ -1,6 +1,7 @@
 import "server-only";
 import { provedorAnthropic } from "./anthropic";
 import { provedorOpenAI } from "./openai";
+import { provedorGemini } from "./gemini";
 import { rodarComContextoDeFallback, rodarComContextoDeRoteamento } from "../jobs/contexto-execucao";
 import { statusOrcamento, downgradeSugerido } from "./orcamento";
 import { obterModoOrcamento } from "../autonomia";
@@ -24,6 +25,7 @@ export { calcularScoreRoteamento };
 const INSTANCIAS_PROVEDOR: Record<string, ModelProvider> = {
   anthropic: provedorAnthropic,
   openai: provedorOpenAI,
+  gemini: provedorGemini,
 };
 
 /** Compat com chamadores da Fase 7 que só querem "qualquer provedor disponível, sem decisão fina". */

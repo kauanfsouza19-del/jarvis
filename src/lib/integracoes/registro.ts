@@ -67,6 +67,48 @@ export function listarIntegracoes(origem = "http://localhost:3000"): ItemIntegra
         },
   });
 
+  // Fase 17 — OpenAI e Gemini existiam no Model Router (Fases 8/17) mas
+  // nunca apareciam aqui — achado real, corrigido: qualquer provedor de
+  // modelo real precisa estar visível no mesmo painel de status, senão
+  // "central de integrações" é mentira por omissão.
+  itens.push({
+    id: "openai",
+    nome: "OpenAI (fallback de modelo)",
+    estado: process.env.OPENAI_API_KEY ? "CONECTADO" : "NAO_CONFIGURADO",
+    identidade: null,
+    ultimaSincronizacao: null,
+    ultimoErro: null,
+    onboarding: process.env.OPENAI_API_KEY
+      ? undefined
+      : {
+          servico: "OpenAI API",
+          porque: "Fallback do Model Router quando a Anthropic falha ou está indisponível — nunca obrigatório.",
+          ondeCriar: "platform.openai.com/api-keys",
+          permissoes: ["—"],
+          ondeColocar: "OPENAI_API_KEY em .env.local",
+          comoTestar: "Force um erro no provedor principal e confira em /api/custo se o fallback foi usado.",
+        },
+  });
+
+  itens.push({
+    id: "gemini",
+    nome: "Google Gemini (modelo, tier gratuito)",
+    estado: process.env.GOOGLE_GEMINI_API_KEY ? "CONECTADO" : "NAO_CONFIGURADO",
+    identidade: null,
+    ultimaSincronizacao: null,
+    ultimoErro: null,
+    onboarding: process.env.GOOGLE_GEMINI_API_KEY
+      ? undefined
+      : {
+          servico: "Google AI Studio (Gemini API)",
+          porque: "Terceiro provedor de modelo — tem tier gratuito de verdade, diferente de Anthropic/OpenAI (só pré-pago).",
+          ondeCriar: "aistudio.google.com/apikey",
+          permissoes: ["—"],
+          ondeColocar: "GOOGLE_GEMINI_API_KEY em .env.local",
+          comoTestar: "Confira em /api/modelos se o Gemini aparece como AVAILABLE.",
+        },
+  });
+
   // Navegador — condição real: o módulo Playwright existe e o Chromium foi
   // baixado. Testável de fato: se a instalação falhar, diagnosticarSite()
   // devolve erro, e é isso que decide o estado — não um "true" otimista.
@@ -235,6 +277,29 @@ export function listarIntegracoes(origem = "http://localhost:3000"): ItemIntegra
           permissoes: ["—"],
           ondeColocar: "NEWS_API_KEY em .env.local",
           comoTestar: "Ainda não implementado — avaliação de provedor gratuito pendente (ver relatório da Fase 12).",
+        },
+  });
+
+  // Fase 17 — ponte de sincronização do vault Obsidian (git push automático
+  // a cada 30min + disparo manual em /api/obsidian/sincronizar). Passou a
+  // ser necessária a partir da Fase 16 (Jarvis rodando em servidor remoto —
+  // o vault local do Windows deixou de ser a mesma máquina).
+  itens.push({
+    id: "obsidian_sync",
+    nome: "Obsidian (sincronização remota)",
+    estado: process.env.OBSIDIAN_GIT_REMOTO ? "CONECTADO" : "NAO_CONFIGURADO",
+    identidade: process.env.OBSIDIAN_GIT_REMOTO ?? null,
+    ultimaSincronizacao: null,
+    ultimoErro: null,
+    onboarding: process.env.OBSIDIAN_GIT_REMOTO
+      ? undefined
+      : {
+          servico: "Repositório Git privado dedicado só ao vault (GitHub, gratuito)",
+          porque: "O Jarvis roda num servidor remoto agora — sem isso, as notas do vault ficam presas no servidor, sem chegar no Obsidian do seu computador.",
+          ondeCriar: "github.com/new → repositório PRIVADO novo (ex: jarvis-vault) → Settings → Deploy keys → Add deploy key COM 'Allow write access' marcado",
+          permissoes: ["escrita no repositório do vault (só esse, nunca o do código)"],
+          ondeColocar: "OBSIDIAN_GIT_REMOTO (URL SSH do repo) e OBSIDIAN_GIT_SSH_KEY (caminho da chave no servidor) nas variáveis de ambiente",
+          comoTestar: "POST em /api/obsidian/sincronizar — deve responder {\"ok\":true}. Depois, `git clone`/`git pull` desse repositório no seu computador com o plugin 'Obsidian Git' (gratuito, open-source) pra puxar automaticamente.",
         },
   });
 
