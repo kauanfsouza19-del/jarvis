@@ -39,6 +39,12 @@ RUN npm prune --omit=dev
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# git + openssh-client (Fase 18) — a sincronização do vault Obsidian
+# (lib/obsidian/sync-git.ts) chama `git` de dentro do próprio processo
+# Node, que roda AQUI dentro do container, não no host. Sem isto, a
+# sincronização falharia com "git: command not found" mesmo com a chave
+# SSH montada corretamente.
+RUN apk add --no-cache git openssh-client
 RUN addgroup -S jarvis && adduser -S jarvis -G jarvis
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next

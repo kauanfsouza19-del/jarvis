@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "../dados/db";
+import { obterStatusSincronizacao } from "../obsidian/sync-git";
 
 /**
  * Registro de integrações — o que está de verdade conectado, agora.
@@ -287,18 +288,28 @@ export function listarIntegracoes(origem = "http://localhost:3000"): ItemIntegra
   itens.push({
     id: "obsidian_sync",
     nome: "Obsidian (sincronização remota)",
-    estado: process.env.OBSIDIAN_GIT_REMOTO ? "CONECTADO" : "NAO_CONFIGURADO",
+    // Fase 18 — estado real, nunca só "configurado = conectado": só
+    // CONECTADO depois de um sucesso de verdade; ERRO se a última
+    // tentativa falhou (mesmo com credencial certa — remoto pode estar
+    // fora do ar, chave pode não ter sido cadastrada ainda no GitHub).
+    estado: (() => {
+      const s = obterStatusSincronizacao();
+      if (!s.configurado) return "NAO_CONFIGURADO";
+      if (s.ultimoErro && s.tentativasConsecutivas > 0) return "ERRO";
+      if (s.ultimoSucessoEm) return "CONECTADO";
+      return "AUTH_NECESSARIA"; // configurado mas ainda nenhuma sincronização bem-sucedida (deploy key pode não estar cadastrada ainda)
+    })(),
     identidade: process.env.OBSIDIAN_GIT_REMOTO ?? null,
-    ultimaSincronizacao: null,
-    ultimoErro: null,
+    ultimaSincronizacao: obterStatusSincronizacao().ultimoSucessoEm,
+    ultimoErro: obterStatusSincronizacao().ultimoErro,
     onboarding: process.env.OBSIDIAN_GIT_REMOTO
       ? undefined
       : {
-          servico: "Repositório Git privado dedicado só ao vault (GitHub, gratuito)",
+          servico: "Repositório Git privado dedicado só ao vault (github.com/kauanfsouza19-del/jarvis-obsidian, já criado)",
           porque: "O Jarvis roda num servidor remoto agora — sem isso, as notas do vault ficam presas no servidor, sem chegar no Obsidian do seu computador.",
-          ondeCriar: "github.com/new → repositório PRIVADO novo (ex: jarvis-vault) → Settings → Deploy keys → Add deploy key COM 'Allow write access' marcado",
+          ondeCriar: "github.com/kauanfsouza19-del/jarvis-obsidian/settings/keys → Add deploy key COM 'Allow write access' marcado (chave dedicada, nunca a mesma do repositório de código)",
           permissoes: ["escrita no repositório do vault (só esse, nunca o do código)"],
-          ondeColocar: "OBSIDIAN_GIT_REMOTO (URL SSH do repo) e OBSIDIAN_GIT_SSH_KEY (caminho da chave no servidor) nas variáveis de ambiente",
+          ondeColocar: "OBSIDIAN_GIT_REMOTO=git@github.com-jarvis-obsidian:kauanfsouza19-del/jarvis-obsidian.git e OBSIDIAN_GIT_SSH_KEY=/root/.ssh/jarvis_obsidian_deploy nas variáveis de ambiente do servidor",
           comoTestar: "POST em /api/obsidian/sincronizar — deve responder {\"ok\":true}. Depois, `git clone`/`git pull` desse repositório no seu computador com o plugin 'Obsidian Git' (gratuito, open-source) pra puxar automaticamente.",
         },
   });

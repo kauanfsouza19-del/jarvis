@@ -640,6 +640,22 @@ function migrar(d: DatabaseSync) {
     )
   `);
 
+  // Estado da sincronização do vault Obsidian (Fase 18) — linha única
+  // (id=1 travado pelo CHECK) porque é status, não histórico. Sobrevive a
+  // restart do container (diferente de estado em memória) — é exatamente
+  // o "last successful sync / last failure / retry count" que a Fase 18
+  // pediu pra sobreviver a reinício.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS obsidian_sync_estado (
+      id                      INTEGER PRIMARY KEY CHECK (id = 1),
+      ultimo_sucesso_em       TEXT,
+      ultimo_commit_em        TEXT,
+      ultimo_erro             TEXT,
+      ultimo_erro_em          TEXT,
+      tentativas_consecutivas INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
   // Interesses padrão (Fase 13) — só semeia se a tabela estiver vazia, nunca
   // sobrescreve o que o Cacique já editou. São ponto de partida configurável,
   // não fato hardcoded — qualquer um pode ser desativado/removido depois.
