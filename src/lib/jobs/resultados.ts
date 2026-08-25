@@ -90,6 +90,32 @@ export async function fecharResultadoDeProspects(
   return { resultadoId, resumo, arquivos: [csv, xlsx] };
 }
 
+/**
+ * Fechamento genérico (Fase 20 — missão de agente) — exatamente o que o
+ * comentário acima já previa: um Result de tipo que não é lista de
+ * prospect, sem tocar em motor.ts nem em fecharResultadoDeProspects. Usado
+ * por qualquer Plano cujos passos não terminam num
+ * `gerar_arquivo_resultado` de prospecção (ex: capacidades de código —
+ * listar/ler/testar/typecheck/build/git — ou conteúdo social encadeado
+ * sem descoberta). Nunca gera CSV/XLSX (não há prospect nenhum); o
+ * `resumo` já É o dado, gravado como está.
+ */
+export function fecharResultadoGenerico(jobId: string, tipo: string, resumo: Record<string, unknown>, opcoes: OpcoesFechamentoResultado = {}) {
+  const resultadoId = gerarId();
+  db()
+    .prepare(`INSERT INTO resultados (id, execucao_id, tipo, resumo, parent_result_id, operacao, metadados_transformacao) VALUES (?,?,?,?,?,?,?)`)
+    .run(
+      resultadoId,
+      jobId,
+      tipo,
+      JSON.stringify(resumo),
+      opcoes.parentResultId ?? null,
+      opcoes.operacao ?? null,
+      opcoes.metadadosTransformacao ? JSON.stringify(opcoes.metadadosTransformacao) : null,
+    );
+  return { resultadoId, resumo };
+}
+
 type LinhaResultado = {
   id: string;
   execucao_id: string;

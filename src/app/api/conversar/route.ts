@@ -166,7 +166,18 @@ export async function POST(req: Request) {
   // reconhece o comando de verdade dentro de planejar(), ver
   // orquestrador/planejador.ts) — sem isto, a mensagem caía direto na
   // resposta conversacional normal, nunca chegando ao Planejador.
-  if (detectarComandoDeTarefa(mensagem, resolvido) || candidatoConteudo || (candidatoDerivado && temResultadoAnteriorParaDerivar)) {
+  // Fase 20 (missão de agente) — mesmo tipo de filtro barato acima, agora
+  // pra ação de EXECUÇÃO com alvo suficientemente claro ("corrija o login
+  // do Jarvis", "audite o código") também chegar ao Orquestrador/Planejador
+  // em vez de só virar conversa normal. BAIXA fica de fora de propósito —
+  // ação sem alvo (ver bloco de esclarecimento acima) já nunca chega aqui;
+  // isto só amplia a PORTA DE ENTRADA, nunca decide sozinho o que fazer —
+  // orquestrar()/planejar() continuam livres pra devolver null (não
+  // orquestrável) e cair na conversa normal, exatamente como já acontece
+  // pros outros gatilhos desta condição.
+  const acaoExecutarComAlvo = resolvido.acao === "EXECUTAR" && resolvido.confianca !== "BAIXA";
+
+  if (detectarComandoDeTarefa(mensagem, resolvido) || candidatoConteudo || (candidatoDerivado && temResultadoAnteriorParaDerivar) || acaoExecutarComAlvo) {
     const orquestrado = await orquestrar(corpo.conversa_id, mensagem, resolvido);
     if (orquestrado) {
       const texto = orquestrado.jobId

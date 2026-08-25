@@ -21,6 +21,17 @@ import { higienizarTextoExterno } from "../seguranca/prompt";
 import { criarConteudo, type PlataformaConteudo, type TipoConteudo } from "../social/repositorio";
 import { buscarEmails, lerEmail, type EmailResumo, type EmailCompleto } from "../google/gmail";
 import { listarEventos, criarEvento, type EventoResumo } from "../google/calendar";
+import {
+  listarArquivosProjeto,
+  lerArquivoProjeto,
+  rodarTestesJarvis,
+  rodarTypecheckJarvis,
+  rodarBuildJarvis,
+  gitStatusJarvis,
+  gitDiffJarvis,
+  type ArquivoListado,
+  type ResultadoComando,
+} from "./codigo";
 import type { Ferramenta, ResultadoFerramenta } from "./tipos";
 
 /**
@@ -595,6 +606,113 @@ const calendarCriar: Ferramenta<{ titulo: string; inicioIso: string; fimIso: str
   },
 };
 
+/* ── código do próprio Jarvis (Fase 20 — missão de agente) ──
+ * Só-leitura/só-verificação: listar, ler, typecheck, build, testes
+ * (allowlist), git status/diff. Nenhuma delas escreve em disco — editar
+ * arquivo do próprio Jarvis fica fora desta fase (ver relatório final).
+ */
+
+const codigoListarArquivos: Ferramenta<{ pasta?: string }, ArquivoListado[]> = {
+  nome: "codigo.listar_arquivos",
+  descricao: "Lista arquivos e pastas de um diretório do repositório Jarvis (não recursivo).",
+  capacidade: "listar_arquivos_jarvis",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { pasta?: string } => typeof e === "object" && e !== null,
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await listarArquivosProjeto(entrada.pasta ?? ".") };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar" };
+    }
+  },
+};
+
+const codigoLerArquivo: Ferramenta<{ caminho: string }, { conteudo: string; truncado: boolean; tamanhoBytes: number }> = {
+  nome: "codigo.ler_arquivo",
+  descricao: "Lê o conteúdo de um arquivo de texto do repositório Jarvis (nunca segredo/credencial/banco).",
+  capacidade: "ler_arquivo_jarvis",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { caminho: string } => typeof e === "object" && e !== null && typeof (e as { caminho?: unknown }).caminho === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await lerArquivoProjeto(entrada.caminho) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao ler" };
+    }
+  },
+};
+
+const codigoRodarTestes: Ferramenta<{ arquivo: string }, ResultadoComando> = {
+  nome: "codigo.rodar_testes",
+  descricao: "Roda um arquivo de teste puro do Jarvis (allowlist: contexto.mjs, ferramentas-tipos.mjs, modelo-validacao.mjs, modelo-registro.mjs, roteador.mjs) e reporta a saída real.",
+  capacidade: "rodar_testes_jarvis",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: false, // executa código de teste, nunca muda produção — reversível por natureza
+  implementado: true,
+  validarEntrada: (e): e is { arquivo: string } => typeof e === "object" && e !== null && typeof (e as { arquivo?: unknown }).arquivo === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await rodarTestesJarvis(entrada.arquivo) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao rodar teste" };
+    }
+  },
+};
+
+const codigoRodarTypecheck: Ferramenta<Record<string, never>, ResultadoComando> = {
+  nome: "codigo.rodar_typecheck",
+  descricao: "Roda 'tsc --noEmit' no repositório Jarvis e reporta a saída real.",
+  capacidade: "rodar_typecheck_jarvis",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => ({ ok: true, saida: await rodarTypecheckJarvis() }),
+};
+
+const codigoRodarBuild: Ferramenta<Record<string, never>, ResultadoComando> = {
+  nome: "codigo.rodar_build",
+  descricao: "Roda 'npm run build' (build de produção) no repositório Jarvis e reporta a saída real.",
+  capacidade: "rodar_build_jarvis",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => ({ ok: true, saida: await rodarBuildJarvis() }),
+};
+
+const codigoGitStatus: Ferramenta<Record<string, never>, ResultadoComando> = {
+  nome: "codigo.git_status",
+  descricao: "Roda 'git status --short' no repositório Jarvis.",
+  capacidade: "inspecionar_git_jarvis",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => ({ ok: true, saida: await gitStatusJarvis() }),
+};
+
+const codigoGitDiff: Ferramenta<{ caminho?: string }, ResultadoComando> = {
+  nome: "codigo.git_diff",
+  descricao: "Roda 'git diff --stat' (opcionalmente restrito a um caminho) no repositório Jarvis.",
+  capacidade: "inspecionar_git_jarvis",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { caminho?: string } => typeof e === "object" && e !== null,
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await gitDiffJarvis(entrada.caminho) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao rodar git diff" };
+    }
+  },
+};
+
 function stub(
   nome: string,
   descricao: string,
@@ -636,6 +754,13 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   gmailLer as unknown as Ferramenta,
   calendarListar as unknown as Ferramenta,
   calendarCriar as unknown as Ferramenta,
+  codigoListarArquivos as unknown as Ferramenta,
+  codigoLerArquivo as unknown as Ferramenta,
+  codigoRodarTestes as unknown as Ferramenta,
+  codigoRodarTypecheck as unknown as Ferramenta,
+  codigoRodarBuild as unknown as Ferramenta,
+  codigoGitStatus as unknown as Ferramenta,
+  codigoGitDiff as unknown as Ferramenta,
   stub("whatsapp.enviar", "Envia mensagem de WhatsApp em nome do Cacique.", "enviar_mensagem_whatsapp", "EXTERNAL_COMMUNICATION", true, "EVOLUTION_API_URL"),
   stub("meta_ads.analisar", "Lê campanhas de uma conta Meta Ads autorizada.", "analisar_meta_ads", "READ", false),
   stub("google_ads.analisar", "Lê campanhas de uma conta Google Ads autorizada.", "analisar_google_ads", "READ", false),

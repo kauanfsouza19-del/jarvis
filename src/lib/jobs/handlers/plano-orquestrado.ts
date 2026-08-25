@@ -11,7 +11,7 @@ import {
 } from "../../orquestrador/repositorio";
 import { ferramentaDisponivelPara, ferramentaQueRequerAprovacao, disponibilidadeDaCapacidade } from "../../orquestrador/capacidades";
 import { listarProspects } from "../../prospeccao/repositorio";
-import { fecharResultadoDeProspects } from "../resultados";
+import { fecharResultadoDeProspects, fecharResultadoGenerico } from "../resultados";
 import {
   registrarHandler,
   atualizarJob,
@@ -427,6 +427,40 @@ async function executar(jobId: string, parametrosBrutos: unknown): Promise<void>
     return;
   }
 
+  // Fechamento genérico (Fase 20 — missão de agente): plano SEM passo
+  // `gerar_arquivo_resultado` (ex: capacidades de código — listar/ler/
+  // testar/typecheck/build/git — ou conteúdo social encadeado sem
+  // descoberta) que rodou passo de verdade e não teve falha total (já
+  // tratada acima) NUNCA deveria cair no "BLOQUEADO: sem passos
+  // executáveis" de baixo — essa mensagem só faz sentido pra plano
+  // genuinamente vazio. Sintetiza um Result a partir da saída de cada
+  // passo (fecharResultadoGenerico — o "Result de tipo que não é
+  // prospecção" que resultados.ts já previa desde a Fase 5) e fecha o Job
+  // como CONCLUIDO de verdade. Nunca toca no caminho de prospecção acima
+  // (passoResultado só existe quando o Planejador criou um).
+  if (!passoResultado) {
+    const executaveis = passosFinais.filter((p) => p.capacidade !== "gerar_arquivo_resultado");
+    if (executaveis.length > 0) {
+      const concluidos = executaveis.filter((p) => p.status === "CONCLUIDO");
+      const resumoGenerico = {
+        totalPassos: executaveis.length,
+        concluidos: concluidos.length,
+        falharam: falharam.length,
+        passos: executaveis.map((p) => ({
+          descricao: p.descricao,
+          capacidade: p.capacidade,
+          status: p.status,
+          saida: p.status === "CONCLUIDO" && p.saida ? truncarSaida(p.saida) : null,
+          erro: p.erro ?? null,
+        })),
+      };
+      const { resultadoId } = fecharResultadoGenerico(jobId, "plano_generico", resumoGenerico);
+      atualizarPlano(planoId, { estado: "CONCLUIDO" });
+      concluirJob(jobId, resultadoId, `${concluidos.length}/${executaveis.length} passo(s) concluído(s).`);
+      return;
+    }
+  }
+
   // Chegou aqui sem gerar resultado e sem "todos falharam" tratado acima —
   // ou o plano nunca teve passo nenhum (nada para trabalhar, ver
   // planejador.ts), ou um plano de origem modelo travou numa configuração
@@ -434,6 +468,18 @@ async function executar(jobId: string, parametrosBrutos: unknown): Promise<void>
   // um erro de execução, é "não consegui prosseguir", com o motivo dito.
   atualizarPlano(planoId, { estado: "ADAPTADO" });
   bloquearJob(jobId, plano.resumo_raciocinio || "Plano sem passos executáveis.");
+}
+
+/** Saída de Tool pode chegar grande (ex: log de build/teste) — nunca infla o resumo do Result sem limite. */
+function truncarSaida(saidaJson: string): unknown {
+  try {
+    const parsed = JSON.parse(saidaJson);
+    const texto = JSON.stringify(parsed);
+    if (texto.length <= 2000) return parsed;
+    return { truncado: true, amostra: texto.slice(0, 2000) };
+  } catch {
+    return saidaJson.slice(0, 2000);
+  }
 }
 
 function agora(): string {

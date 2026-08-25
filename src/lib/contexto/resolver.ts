@@ -236,7 +236,18 @@ const ACOES: Array<[Acao, RegExp]> = [
   // mesma coisa que "como eu faço/devo" (que já é PLANEJAR e não colide:
   // exige "faço"/"devo" depois de "como").
   ["RESPONDER", /\b(o que [eé]|quanto|quando|quem|onde|quais|como (voc[eê]\s+)?(est[aá]|vai|anda)|me (expli(c|qu)\w*|diz|conta)|expli(c|qu)\w*)/],
-  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|gera|gerar|escreve|escrever|manda|enviar|publica|implementa|corrig|ajusta|muda|mudar|altera)/],
+  // Achado real (Fase 20, missão de agente): "corrig" nunca casava "corrija"
+  // /"corrijo" — corrigir tem a mesma alternância g→j antes de a/o que
+  // explicar tem c→qu (mesma família ortográfica, som /ʒ/ preservado).
+  // "gera"/"ajusta"/"implementa" tinham o mesmo problema, na direção oposta:
+  // só cobriam a forma indicativa/imperativa informal ("gera isso"), nunca
+  // o imperativo formal-você ("gere", "ajuste", "implemente") — que é
+  // exatamente o registro que o Cacique usa nos próprios exemplos da missão
+  // ("Corrija", "Gere", "Ajuste", "Implemente"). "ger(a|ar|e\b)" e
+  // "ajust(a|ar|e)" usam \b depois do "e" só onde havia risco real de colidir
+  // com outra palavra comum (gere→"gerente"); implementa/implemente não
+  // precisa disso (não existe colisão plausível).
+  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|ger(a|ar|e\b)|escreve|escrever|manda|enviar|publica|implementa|implemente|corrig|corrij|ajust(a|ar|e)|muda|mudar|altera)/],
   ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verifica|olha|conferir)/],
   ["PLANEJAR", /\b(plane|planeja|estrutura|organiza|define|definir|decide|decidir|pensa|pensar em|como (eu )?(fa[cç]o|devo)|qual (o )?melhor|estrat[eé]gi)/],
   ["REVISAR", /\b(revis|melhor(a|ar)|otimiz|refina|ajust|aprimor)/],

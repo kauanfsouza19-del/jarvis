@@ -160,6 +160,56 @@ ok("projeto identificado corretamente como JARVIS", perguntaSobreJarvis.projetoN
 // Continua BAIXA quando é EXECUTAR sem alvo — ação de verdade, não pergunta.
 const acaoSemAlvo = resolverContexto("Corrija esse problema na autenticação.", lexico);
 ok("ação sem projeto/cliente nomeado CONTINUA em BAIXA (não é pergunta, é ordem sem alvo)", acaoSemAlvo.confianca === "BAIXA", acaoSemAlvo.confianca);
+ok("mas a ação em si É reconhecida como EXECUTAR (achado: 'corrig' não casava 'corrija')", acaoSemAlvo.acao === "EXECUTAR", acaoSemAlvo.acao);
+
+// Regressão (Fase 20 — missão de agente): "corrig" não casava a conjugação
+// formal "corrija"/"corrijo" (mesma alternância g→j de corrigir antes de
+// a/o), e "gera"/"ajusta"/"implementa" não casavam a forma imperativa
+// formal-você "gere"/"ajuste"/"implemente" — o registro que a própria
+// missão usa em todos os seus exemplos. Cobertura das 12 frases pedidas.
+secao("2b. Conjugação de EXECUTAR — regressão completa (Fase 20)");
+
+const rCorrigirLogin = resolverContexto("Corrija o problema do login do Jarvis.", lexico);
+ok("'Corrija o problema do login do Jarvis.' → EXECUTAR + JARVIS + ALTA", rCorrigirLogin.acao === "EXECUTAR" && rCorrigirLogin.confianca === "ALTA" && rCorrigirLogin.projetoNome === "JARVIS", `acao=${rCorrigirLogin.acao} confianca=${rCorrigirLogin.confianca} projeto=${rCorrigirLogin.projetoNome}`);
+
+const rCorrigirLocatta = resolverContexto("Corrija o onboarding do Locatta.", lexico);
+ok("'Corrija o onboarding do Locatta.' → EXECUTAR + LOCATTA + ALTA", rCorrigirLocatta.acao === "EXECUTAR" && rCorrigirLocatta.confianca === "ALTA" && rCorrigirLocatta.projetoNome === "LOCATTA", `acao=${rCorrigirLocatta.acao} confianca=${rCorrigirLocatta.confianca} projeto=${rCorrigirLocatta.projetoNome}`);
+
+const rCorrigirInf = resolverContexto("Corrigir o problema do login.", lexico);
+ok("'Corrigir o problema do login.' → EXECUTAR (infinitivo, sem alvo → BAIXA)", rCorrigirInf.acao === "EXECUTAR" && rCorrigirInf.confianca === "BAIXA", `acao=${rCorrigirInf.acao} confianca=${rCorrigirInf.confianca}`);
+
+const rCorrigeInformal = resolverContexto("Corrige esse problema.", lexico);
+ok("'Corrige esse problema.' → EXECUTAR (informal, já funcionava)", rCorrigeInformal.acao === "EXECUTAR", rCorrigeInformal.acao);
+
+const rCrie = resolverContexto("Crie 10 criativos.", lexico);
+ok("'Crie 10 criativos.' → EXECUTAR + CRIATIVOS + ALTA", rCrie.acao === "EXECUTAR" && rCrie.confianca === "ALTA" && rCrie.projetoNome === "CRIATIVOS", `acao=${rCrie.acao} confianca=${rCrie.confianca} projeto=${rCrie.projetoNome}`);
+
+const rCriar = resolverContexto("Criar 10 criativos.", lexico);
+ok("'Criar 10 criativos.' → EXECUTAR + CRIATIVOS + ALTA", rCriar.acao === "EXECUTAR" && rCriar.confianca === "ALTA" && rCriar.projetoNome === "CRIATIVOS", `acao=${rCriar.acao} confianca=${rCriar.confianca} projeto=${rCriar.projetoNome}`);
+
+const rGere = resolverContexto("Gere uma nova campanha.", lexico);
+ok("'Gere uma nova campanha.' → EXECUTAR (achado: 'gera/gerar' não casava 'gere')", rGere.acao === "EXECUTAR", rGere.acao);
+
+const rGerar = resolverContexto("Gerar uma nova campanha.", lexico);
+ok("'Gerar uma nova campanha.' → EXECUTAR (infinitivo, já funcionava)", rGerar.acao === "EXECUTAR", rGerar.acao);
+
+const rImplemente = resolverContexto("Implemente essa funcionalidade.", lexico);
+ok("'Implemente essa funcionalidade.' → EXECUTAR (achado: 'implementa' não casava 'implemente')", rImplemente.acao === "EXECUTAR", rImplemente.acao);
+
+const rImplementar = resolverContexto("Implementar essa funcionalidade.", lexico);
+ok("'Implementar essa funcionalidade.' → EXECUTAR (infinitivo, já funcionava)", rImplementar.acao === "EXECUTAR", rImplementar.acao);
+
+const rAjuste = resolverContexto("Ajuste esse fluxo.", lexico);
+ok("'Ajuste esse fluxo.' → EXECUTAR (achado: 'ajusta' não casava 'ajuste')", rAjuste.acao === "EXECUTAR", rAjuste.acao);
+
+const rAjustar = resolverContexto("Ajustar esse fluxo.", lexico);
+ok("'Ajustar esse fluxo.' → EXECUTAR (infinitivo, já funcionava)", rAjustar.acao === "EXECUTAR", rAjustar.acao);
+
+// Distinção preservada: RESPONDER continua vencendo pergunta de verdade,
+// mesmo com verbo de EXECUTAR embutido — nunca "todo imperativo vira alta
+// confiança" (a missão pede correção semântica, não confiança global).
+const rPerguntaComVerbo = resolverContexto("Explique como corrigir esse tipo de problema.", lexico);
+ok("pergunta com verbo de EXECUTAR embutido continua RESPONDER, não EXECUTAR", rPerguntaComVerbo.acao === "RESPONDER", rPerguntaComVerbo.acao);
 
 /* ── 3. modo interno, sem seletor ── */
 
