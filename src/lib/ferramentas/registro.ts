@@ -42,17 +42,20 @@ import {
   obterInsightsCampanhas,
   atualizarStatusCampanha,
   atualizarOrcamentoDiarioCampanha,
-  criarCampanhaTeste,
+  criarCampanha,
   listarPaginas,
+  listarPixels,
   type ContaAnuncioMeta,
   type CampanhaMeta,
   type InsightCampanhaMeta,
   type StatusCampanha,
   type ResultadoMutacaoMeta,
-  type ParametrosCampanhaTeste,
+  type ParametrosCampanha,
   type ResultadoCriacaoCampanha,
   type PaginaMeta,
+  type PixelMeta,
 } from "./meta-ads";
+import { analisarCampanhas, THRESHOLDS_PADRAO, type ResultadoAnaliseOtimizacao, type ThresholdsOtimizacao } from "./meta-otimizacao";
 import { listarArquivosPasta, type ArquivoDrive } from "../google/drive";
 import {
   ingerirCriativosDaFonte,
@@ -887,7 +890,7 @@ const metaAdsAtualizarOrcamento: Ferramenta<{ campanhaId: string; orcamentoDiari
 // (sempre PAUSED, nunca gasta sozinha, ver nota em meta-ads.ts). SEMPRE
 // exige aprovação explícita: dois portões humanos antes de qualquer gasto
 // real (este + o de meta_ads.atualizar_status_campanha pra ativar depois).
-const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanhaTeste, ResultadoCriacaoCampanha> = {
+const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanha, ResultadoCriacaoCampanha> = {
   nome: "meta_ads.criar_campanha_teste",
   descricao:
     "Cria uma campanha nova (campanha + conjunto de anúncios + anúncio) numa conta Meta Ads, reaproveitando um criativo/formulário de lead/segmentação já existentes na conta. SEMPRE criada PAUSADA — não gasta sozinha, precisa de uma segunda aprovação (meta_ads.atualizar_status_campanha) pra ativar. SEMPRE exige aprovação explícita.",
@@ -896,7 +899,7 @@ const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanhaTeste, ResultadoCr
   exigeAprovacaoExplicita: true,
   implementado: true,
   credencialNecessaria: "META_ADS_TOKEN",
-  validarEntrada: (e): e is ParametrosCampanhaTeste => {
+  validarEntrada: (e): e is ParametrosCampanha => {
     if (typeof e !== "object" || e === null) return false;
     const x = e as Record<string, unknown>;
     return (
@@ -911,7 +914,7 @@ const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanhaTeste, ResultadoCr
   },
   executar: async (entrada) => {
     try {
-      return { ok: true, saida: await criarCampanhaTeste(entrada) };
+      return { ok: true, saida: await criarCampanha(entrada) };
     } catch (e) {
       return { ok: false, erro: e instanceof Error ? e.message : "erro ao criar campanha" };
     }
@@ -932,6 +935,52 @@ const metaAdsListarPaginas: Ferramenta<Record<string, never>, PaginaMeta[]> = {
       return { ok: true, saida: await listarPaginas() };
     } catch (e) {
       return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar páginas" };
+    }
+  },
+};
+
+const metaAdsListarPixels: Ferramenta<{ contaId: string }, PixelMeta[]> = {
+  nome: "meta_ads.listar_pixels",
+  descricao: "Lista os Pixels/Datasets já existentes numa conta Meta Ads (nome, ID, última vez que disparou). Sempre consultar antes de considerar criar um novo — nunca duplica.",
+  capacidade: "listar_pixels_meta",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string } => typeof e === "object" && e !== null && typeof (e as { contaId?: unknown }).contaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await listarPixels(entrada.contaId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar pixels" };
+    }
+  },
+};
+
+/* ── Motor de Otimização (Fase 27c) ──
+ * Só ANÁLISE — nunca muta nada, por isso READ, nunca exige aprovação.
+ * Recebe insights/campanhas já coletados (nunca busca sozinha na Meta) —
+ * separa "buscar dado" de "analisar dado" de propósito: permite testar o
+ * motor com dado real já capturado, sem depender de token vivo toda vez,
+ * e deixa quem chama decidir se quer análise fresca ou sobre um snapshot
+ * salvo. Ação sugerida em cada achado é só TEXTO — executar de verdade
+ * sempre passa pelas Tools de mutação já existentes (aprovação obrigatória).
+ */
+const metaAdsAnalisarCampanhas: Ferramenta<{ insights: InsightCampanhaMeta[]; campanhas?: CampanhaMeta[]; thresholds?: Partial<ThresholdsOtimizacao> }, ResultadoAnaliseOtimizacao> = {
+  nome: "meta_ads.analisar_campanhas",
+  descricao: "Analisa um conjunto de insights de campanha (nível campanha) e devolve achados priorizados (crítico/recomendação/observação) — gasto sem resultado, CTR baixo, CPC alto, candidata a escalar/pausar, orçamento subutilizado, nome duplicado.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { insights: InsightCampanhaMeta[]; campanhas?: CampanhaMeta[]; thresholds?: Partial<ThresholdsOtimizacao> } =>
+    typeof e === "object" && e !== null && Array.isArray((e as { insights?: unknown }).insights),
+  executar: async (entrada) => {
+    try {
+      const thresholds = { ...THRESHOLDS_PADRAO, ...(entrada.thresholds ?? {}) };
+      return { ok: true, saida: analisarCampanhas(entrada.insights, entrada.campanhas ?? [], thresholds) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao analisar campanhas" };
     }
   },
 };
@@ -1153,6 +1202,8 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   metaAdsAtualizarOrcamento as unknown as Ferramenta,
   metaAdsCriarCampanhaTeste as unknown as Ferramenta,
   metaAdsListarPaginas as unknown as Ferramenta,
+  metaAdsListarPixels as unknown as Ferramenta,
+  metaAdsAnalisarCampanhas as unknown as Ferramenta,
   driveListarArquivosPasta as unknown as Ferramenta,
   criativosListar as unknown as Ferramenta,
   criativosListarFontes as unknown as Ferramenta,

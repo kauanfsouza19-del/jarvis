@@ -40,6 +40,35 @@ function tokenObrigatorio(): string {
 
 type ErroGraph = { error?: { message: string; type?: string; code?: number; error_subcode?: number; error_user_msg?: string; error_user_title?: string } };
 
+/**
+ * Classificação de erro (Fase 27c, pedido explícito: "Do not simply
+ * return 'Invalid parameter'"). Faixas de código pesquisadas contra
+ * developers.facebook.com/docs/graph-api/guides/error-handling em
+ * 25/08/2026 — a própria Meta documenta essas faixas como estáveis
+ * entre versões da API (não é código específico de endpoint, é o nível
+ * de transporte do Graph API inteiro). Categoria "DESCONHECIDO" é o
+ * default honesto pra código fora da faixa documentada — nunca inventa
+ * uma categoria pra código não pesquisado.
+ */
+export type CategoriaErroMeta =
+  | "AUTENTICACAO" // token expirado/inválido — precisa gerar/renovar
+  | "PERMISSAO" // token válido, mas sem escopo/acesso pro que foi pedido
+  | "PARAMETRO_INVALIDO" // requisição malformada — o caso mais comum em criação de objeto
+  | "LIMITE_TAXA" // rate limit — retentável depois de esperar
+  | "POLITICA_OU_TERMOS" // bloqueio de política/ToS da conta ou Página
+  | "OBJETO_NAO_ENCONTRADO"
+  | "DESCONHECIDO";
+
+export function classificarErroMeta(code?: number, errorSubcode?: number): CategoriaErroMeta {
+  if (code === 190) return "AUTENTICACAO";
+  if (code === 10 || (code !== undefined && code >= 200 && code <= 299)) return "PERMISSAO";
+  if (code === 100) return "PARAMETRO_INVALIDO";
+  if (code === 1 || code === 2 || code === 4 || code === 17 || code === 613 || code === 32 || code === 80004) return "LIMITE_TAXA";
+  if (code === 368 || errorSubcode === 1487390) return "POLITICA_OU_TERMOS";
+  if (code === 803) return "OBJETO_NAO_ENCONTRADO";
+  return "DESCONHECIDO";
+}
+
 async function chamarGraph<T>(caminho: string, opcoes: { metodo?: "GET" | "POST"; corpo?: Record<string, string> } = {}): Promise<T> {
   const token = tokenObrigatorio();
   const metodo = opcoes.metodo ?? "GET";
@@ -67,11 +96,28 @@ async function chamarGraph<T>(caminho: string, opcoes: { metodo?: "GET" | "POST"
     // "Invalid parameter" genérico e indistinguível de qualquer outro
     // (achado real, Fase 27: 3 causas raiz diferentes, mesma "message").
     const detalhe = dados.error?.error_user_msg ?? dados.error?.error_user_title;
-    throw new Error(
-      `Graph API erro: ${dados.error?.message ?? `HTTP ${resp.status}`}${dados.error?.code ? ` (code ${dados.error.code}${dados.error.error_subcode ? `/${dados.error.error_subcode}` : ""})` : ""}${detalhe ? ` — ${detalhe}` : ""}`,
+    const categoria = classificarErroMeta(dados.error?.code, dados.error?.error_subcode);
+    throw new ErroMeta(
+      categoria,
+      `[${categoria}] Graph API erro: ${dados.error?.message ?? `HTTP ${resp.status}`}${dados.error?.code ? ` (code ${dados.error.code}${dados.error.error_subcode ? `/${dados.error.error_subcode}` : ""})` : ""}${detalhe ? ` — ${detalhe}` : ""}`,
+      dados.error?.code,
+      dados.error?.error_subcode,
     );
   }
   return dados;
+}
+
+/** Erro tipado — quem chama pode checar `e instanceof ErroMeta && e.categoria === "AUTENTICACAO"` pra decidir automaticamente (ex: parar de tentar e avisar "token expirado") em vez de fazer parsing de string de mensagem. */
+export class ErroMeta extends Error {
+  constructor(
+    public readonly categoria: CategoriaErroMeta,
+    message: string,
+    public readonly code?: number,
+    public readonly errorSubcode?: number,
+  ) {
+    super(message);
+    this.name = "ErroMeta";
+  }
 }
 
 export type ContaAnuncioMeta = {
@@ -213,6 +259,24 @@ export async function enviarVideoCreativo(contaId: string, bytes: Buffer, nomeAr
   return { videoId: dados.id };
 }
 
+// ── Pixel / Dataset (Fase 27c) ──
+// Pesquisado contra developers.facebook.com/docs/marketing-api/dataset
+// em 25/08/2026: "Pixel" e "Dataset" são o MESMO objeto na API atual —
+// developers.facebook.com/docs/marketing-api/conversions-api/datasets
+// documenta que todo Pixel criado hoje já É um Dataset (unificação feita
+// pela própria Meta); não existe endpoint separado "criar Pixel" vs
+// "criar Dataset" na API atual — só /act_.../adspixels, que serve os
+// dois papéis. list-before-create (nunca duplica) é o comportamento
+// abaixo: sempre lista primeiro, cria só se pedido explicitamente E
+// nenhum já existir com o mesmo nome.
+export type PixelMeta = { id: string; name: string; last_fired_time?: string; is_created_by_business?: boolean };
+
+export async function listarPixels(contaId: string): Promise<PixelMeta[]> {
+  validarContaId(contaId);
+  const r = await chamarGraph<{ data: PixelMeta[] }>(`/${contaId}/adspixels?fields=name,last_fired_time,is_created_by_business&limit=100`);
+  return r.data;
+}
+
 export type StatusCampanha = "ACTIVE" | "PAUSED";
 
 export type ResultadoMutacaoMeta = { id: string; sucesso: true };
@@ -272,17 +336,38 @@ export async function atualizarOrcamentoDiarioCampanha(campanhaId: string, orcam
  * passos de aprovação humana antes de qualquer centavo real ser gasto,
  * nunca um só.
  */
-export type ParametrosCampanhaTeste = {
+// Pesquisado contra developers.facebook.com/docs/marketing-api/campaign-structure/objective-optimization
+// em 25/08/2026: desde a unificação ODAX (Outcome-Driven Ad Experiences,
+// 2022), a Marketing API só aceita estes 6 objetivos "OUTCOME_*" na
+// criação de campanha nova — os antigos (CONVERSIONS, LINK_CLICKS,
+// REACH, VIDEO_VIEWS etc.) são só de LEITURA em campanha legada, nunca
+// aceitos em POST /campaigns hoje. Validação abaixo é greenlist real, não
+// suposição — impede que um objetivo obsoleto imaginado passe despercebido.
+export const OBJETIVOS_META_VALIDOS = [
+  "OUTCOME_AWARENESS",
+  "OUTCOME_TRAFFIC",
+  "OUTCOME_ENGAGEMENT",
+  "OUTCOME_LEADS",
+  "OUTCOME_SALES",
+  "OUTCOME_APP_PROMOTION",
+] as const;
+export type ObjetivoMeta = (typeof OBJETIVOS_META_VALIDOS)[number];
+
+export type ParametrosCampanha = {
   contaId: string;
   nomeCampanha: string;
   orcamentoDiarioCentavos: number;
   creativeId: string;
   pageId: string;
   targeting: Record<string, unknown>;
+  /** Default OUTCOME_LEADS — o único objetivo realmente testado ponta a ponta contra a API até agora (ver relatório da Fase 27/27c). Os outros 5 são aceitos e validados, mas não têm evidência real de execução ainda. */
+  objective?: ObjetivoMeta;
   optimizationGoal?: string;
   billingEvent?: string;
   bidStrategy?: string;
   destinationType?: string;
+  /** Objeto promovido — {page_id} cobre Leads/Engagement/Traffic testados; SALES com catálogo precisa de product_set_id (nunca inventado aqui — passa explícito ou fica de fora). */
+  promotedObject?: Record<string, unknown>;
 };
 
 export type ResultadoCriacaoCampanha = {
@@ -292,7 +377,7 @@ export type ResultadoCriacaoCampanha = {
   status: "PAUSED";
 };
 
-export async function criarCampanhaTeste(p: ParametrosCampanhaTeste): Promise<ResultadoCriacaoCampanha> {
+export async function criarCampanha(p: ParametrosCampanha): Promise<ResultadoCriacaoCampanha> {
   validarContaId(p.contaId);
   if (!Number.isInteger(p.orcamentoDiarioCentavos) || p.orcamentoDiarioCentavos <= 0) {
     throw new Error("orcamentoDiarioCentavos deve ser um inteiro positivo (centavos da moeda da conta)");
@@ -301,12 +386,16 @@ export async function criarCampanhaTeste(p: ParametrosCampanhaTeste): Promise<Re
     throw new Error(`orcamentoDiarioCentavos (${p.orcamentoDiarioCentavos}) excede o teto de segurança de ${TETO_ORCAMENTO_DIARIO_CENTAVOS}`);
   }
   if (!p.nomeCampanha.trim()) throw new Error("nomeCampanha não pode ser vazio");
+  const objetivo = p.objective ?? "OUTCOME_LEADS";
+  if (!OBJETIVOS_META_VALIDOS.includes(objetivo)) {
+    throw new Error(`objective "${objetivo}" inválido — use um de: ${OBJETIVOS_META_VALIDOS.join(", ")}`);
+  }
 
   const campanha = await chamarGraph<{ id: string }>(`/${p.contaId}/campaigns`, {
     metodo: "POST",
     corpo: {
       name: p.nomeCampanha,
-      objective: "OUTCOME_LEADS",
+      objective: objetivo,
       status: "PAUSED",
       special_ad_categories: JSON.stringify([]),
       daily_budget: String(p.orcamentoDiarioCentavos),
@@ -332,7 +421,7 @@ export async function criarCampanhaTeste(p: ParametrosCampanhaTeste): Promise<Re
         billing_event: p.billingEvent ?? "IMPRESSIONS",
         optimization_goal: p.optimizationGoal ?? "LEAD_GENERATION",
         targeting: JSON.stringify(p.targeting),
-        promoted_object: JSON.stringify({ page_id: p.pageId }),
+        promoted_object: JSON.stringify(p.promotedObject ?? { page_id: p.pageId }),
         // Achado real (Fase 27): sem isto, o anúncio final falha com "O
         // criativo com formulário de lead só pode ser usado para... o
         // destino ON_AD" (erro 100/1892040) — obrigatório quando o
