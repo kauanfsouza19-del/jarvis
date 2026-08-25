@@ -119,12 +119,24 @@ export async function rodarBuildJarvis(): Promise<ResultadoComando> {
   return rodar(npmCmd, ["run", "build"], 240_000);
 }
 
+// Achado real (Fase 20): em produção, RAIZ é um bind mount do checkout do
+// HOST (dono root) visto por dentro do container como usuário não-root
+// `jarvis` — o git recusa por padrão ("dubious ownership") qualquer repo
+// cujo dono não bate com o usuário atual, proteção contra repositório
+// malicioso compartilhado. `-c safe.directory=RAIZ` é a exceção
+// oficial do próprio git pra isso, passada por chamada (nunca escrita em
+// config persistente — sobrevive a recriação do container sem estado
+// extra pra manter).
+function argsGitSeguro(...resto: string[]): string[] {
+  return ["-c", `safe.directory=${RAIZ}`, ...resto];
+}
+
 export async function gitStatusJarvis(): Promise<ResultadoComando> {
-  return rodar("git", ["status", "--short"], 15_000);
+  return rodar("git", argsGitSeguro("status", "--short"), 15_000);
 }
 
 export async function gitDiffJarvis(caminhoRelativo?: string): Promise<ResultadoComando> {
-  const args = ["diff", "--stat"];
+  const args = argsGitSeguro("diff", "--stat");
   if (caminhoRelativo) {
     if (caminhoBloqueado(caminhoRelativo)) throw new Error("diff bloqueado — caminho de segredo/dado");
     resolverDentroDoRepo(caminhoRelativo); // valida a fronteira antes de montar o comando
