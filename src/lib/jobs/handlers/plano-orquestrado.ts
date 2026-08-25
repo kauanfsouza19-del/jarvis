@@ -12,6 +12,7 @@ import {
 import { ferramentaDisponivelPara, ferramentaQueRequerAprovacao, disponibilidadeDaCapacidade } from "../../orquestrador/capacidades";
 import { listarProspects } from "../../prospeccao/repositorio";
 import { fecharResultadoDeProspects, fecharResultadoGenerico } from "../resultados";
+import { rotear, chamarComFallback, algumProvedorDisponivel } from "../../modelo/roteador";
 import {
   registrarHandler,
   atualizarJob,
@@ -59,6 +60,29 @@ function tempoDecorridoMs(jobId: string): number {
 }
 
 const CAPACIDADES_PIPELINE = new Set(["enriquecer_prospect", "diagnosticar_prospect", "analisar_marketing_digital", "pesquisar_instagram"]);
+
+/**
+ * Retentativa adaptativa (achado real, Fase 21) — escopo deliberadamente
+ * restrito às capacidades de código (Fase 20): são as únicas sem NENHUM
+ * teste existente que dependa de um número exato de tentativas ou de um
+ * FALHOU imediato, e são as únicas onde uma falha típica (ex: "chutei um
+ * caminho de arquivo errado") tem uma causa que o próprio modelo pode
+ * corrigir sozinho num replanning simples. NUNCA aplicado à esteira de
+ * prospecção — lá, falha por falta de credencial/site fora do ar é
+ * permanente (retentar não muda nada) e várias suites de teste já
+ * verificam o FALHOU imediato exato (ver testes/pipeline-dinamico.mjs
+ * seção 3). `decidirProximoPasso` já existia na interface de provedor
+ * desde a Fase 8 (gerarPlano/interpretarResultado/decidirProximoPasso)
+ * mas nunca era chamado em lugar nenhum — Tool declarada, nunca usada.
+ */
+const CAPACIDADES_CODIGO = new Set([
+  "listar_arquivos_jarvis",
+  "ler_arquivo_jarvis",
+  "rodar_testes_jarvis",
+  "rodar_typecheck_jarvis",
+  "rodar_build_jarvis",
+  "inspecionar_git_jarvis",
+]);
 const ESTADOS_TERMINAIS = new Set(["CONCLUIDO", "FALHOU", "PULADO"]);
 
 const ROTULOS_ESTAGIO: Record<string, string> = {
@@ -496,6 +520,49 @@ function extrairProspectIdDaEntrada(entradaJson: string): string | undefined {
   }
 }
 
+/**
+ * Único lugar que decide o que fazer com uma falha de Tool — antes,
+ * qualquer falha virava FALHOU direto. Agora, só pra capacidade de código
+ * (ver CAPACIDADES_CODIGO), com no máximo UMA retentativa (tentativas < 1
+ * — nunca um segundo giro, nunca loop), pergunta ao modelo via
+ * `decidirProximoPasso` (Fase 8, nunca chamado até aqui). RETENTAR volta
+ * o passo pro PENDENTE (passosProntos() pega de novo no próximo giro do
+ * loop principal); qualquer outra decisão, ou falta de modelo, ou erro na
+ * própria decisão, cai no FALHOU de sempre — nunca trava o plano.
+ */
+async function tratarFalhaPasso(jobId: string, objetivo: string, passo: PlanoPasso, motivoErro: string): Promise<void> {
+  const elegivel = CAPACIDADES_CODIGO.has(passo.capacidade) && passo.tentativas < 1 && algumProvedorDisponivel();
+  if (elegivel) {
+    try {
+      const decisao = rotear({ tipoTarefa: "classificacao", complexidade: "baixa", tamanhoContextoTokens: 300 });
+      if (decisao.provedor) {
+        const passosDoPlanoAtual = passosDoPlano(passo.plano_id);
+        const resposta = await chamarComFallback(decisao, (p) =>
+          p.decidirProximoPasso({
+            objetivo,
+            passosConcluidos: passosDoPlanoAtual.filter((x) => x.status === "CONCLUIDO").length,
+            passosTotal: passosDoPlanoAtual.length,
+            ultimoErro: `Passo "${passo.descricao}" (${passo.capacidade}): ${motivoErro}`,
+          }),
+        );
+        if (resposta.acao === "RETENTAR") {
+          emitirEvento(jobId, "passo", `Retentando "${passo.descricao}" — ${resposta.motivo}`);
+          atualizarPasso(passo.id, { status: "PENDENTE", tentativas: passo.tentativas + 1, iniciado_em: null, erro: null });
+          return;
+        }
+        emitirEvento(
+          jobId,
+          "passo",
+          `Decisão do modelo para "${passo.descricao}": ${resposta.acao}${"motivo" in resposta ? ` — ${resposta.motivo}` : ""}. Marcando como falha.`,
+        );
+      }
+    } catch {
+      // decisão indisponível/erro — nunca trava o plano por causa disso, cai no FALHOU normal abaixo
+    }
+  }
+  atualizarPasso(passo.id, { status: "FALHOU", erro: motivoErro.slice(0, 200), concluido_em: agora() });
+}
+
 async function executarPasso(jobId: string, objetivo: string, passo: PlanoPasso): Promise<void> {
   atualizarPasso(passo.id, { status: "EXECUTANDO", iniciado_em: agora() });
   emitirEvento(jobId, "passo", passo.descricao);
@@ -544,16 +611,12 @@ async function executarPasso(jobId: string, objetivo: string, passo: PlanoPasso)
     if (!ferramenta.validarEntrada(entrada)) throw new Error("entrada inválida para a ferramenta");
     const resultado = await ferramenta.executar!(entrada);
     if (!resultado.ok) {
-      atualizarPasso(passo.id, { status: "FALHOU", erro: resultado.erro, concluido_em: agora() });
+      await tratarFalhaPasso(jobId, objetivo, passo, resultado.erro);
       return;
     }
     atualizarPasso(passo.id, { status: "CONCLUIDO", saida: JSON.stringify(resultado.saida), concluido_em: agora() });
   } catch (e) {
-    atualizarPasso(passo.id, {
-      status: "FALHOU",
-      erro: e instanceof Error ? e.message.slice(0, 200) : "erro desconhecido",
-      concluido_em: agora(),
-    });
+    await tratarFalhaPasso(jobId, objetivo, passo, e instanceof Error ? e.message.slice(0, 200) : "erro desconhecido");
   }
 }
 
