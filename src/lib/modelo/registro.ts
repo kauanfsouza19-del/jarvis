@@ -64,6 +64,12 @@ export const PROVEDORES: ProvedorRegistro[] = [
   // de Anthropic/OpenAI que são só pré-pago — por isso entra como CHEAP,
   // preferido antes do gpt-4o-mini pago em modo ECONOMY (ver roteador-score.ts).
   { id: "gemini", nomeExibicao: "Google Gemini", credencialEnv: "GOOGLE_GEMINI_API_KEY" },
+  // Fase 25 — primeiro provedor sem credencial (credencialEnv null, campo
+  // reservado desde a Fase 8 pra exatamente este caso). Disponibilidade
+  // real não vem de env var — vem de checagem de rede contra o serviço
+  // local (ver modelo/ollama.ts), sincronizada no MESMO mecanismo de
+  // estado transitório usado por rate-limit/erro dos outros provedores.
+  { id: "ollama", nomeExibicao: "Ollama (local)", credencialEnv: null },
 ];
 
 export const MODELOS_REGISTRO: ModeloRegistro[] = [
@@ -130,6 +136,22 @@ export const MODELOS_REGISTRO: ModeloRegistro[] = [
     janelaContexto: 1_000_000,
     capacidades: ["reasoning", "coding", "vision", "structured_output", "tool_calling"],
     latenciaClasse: "baixa",
+  },
+  // Ollama (Fase 25) — modelo escolhido pelo hardware REAL verificado
+  // nesta fase (AMD Ryzen 5 4600G, ~15.4GB RAM, sem GPU dedicada —
+  // inferência CPU-only), não por preferência genérica. 7-8B é o teto
+  // realista; 13B+ fica apertado demais ao lado do resto do sistema.
+  // custoPor1M em 0 é fato (processamento local, sem cobrança por token),
+  // não otimismo. latenciaClasse "alta" é honesto pra CPU-only — nunca
+  // finge a mesma velocidade de um provedor de nuvem com GPU dedicada.
+  {
+    modeloId: "llama3.1:8b",
+    provedorId: "ollama",
+    tier: "CHEAP",
+    custoPor1M: { entrada: 0, saida: 0 },
+    janelaContexto: 128_000,
+    capacidades: ["reasoning", "coding", "structured_output"],
+    latenciaClasse: "alta",
   },
 ];
 
@@ -201,6 +223,18 @@ export function disponibilidadeDoProvedor(provedorId: string): StatusProvedor {
     estadoTransitorio.delete(provedorId); // expirou — volta a checar credencial normalmente
   }
 
-  if (provedor.credencialEnv && !process.env[provedor.credencialEnv]) return "REQUIRES_CREDENTIAL";
-  return "AVAILABLE";
+  if (provedor.credencialEnv) {
+    return process.env[provedor.credencialEnv] ? "AVAILABLE" : "REQUIRES_CREDENTIAL";
+  }
+
+  // Achado real (Fase 25, testando /api/modelos de verdade): provedor com
+  // credencialEnv null (ex: Ollama) não tem env var pra checar — disponibilidade
+  // real só existe via checagem de rede feita pelo PRÓPRIO provedor (ver
+  // modelo/ollama.ts), que só roda se aquele módulo tiver sido carregado
+  // nesta requisição. Uma rota que só importa deste arquivo (ex: /api/modelos,
+  // sem nunca tocar o roteador) nunca carrega ollama.ts — sem a correção
+  // abaixo, isso "assumia disponível" por padrão, otimista e errado (achado
+  // real: retornou AVAILABLE pra Ollama nunca instalado neste ambiente).
+  // "Nunca verificado" É a resposta honesta até uma checagem real acontecer.
+  return "TEMPORARILY_UNAVAILABLE";
 }
