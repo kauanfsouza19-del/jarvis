@@ -1,8 +1,10 @@
 import "server-only";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { readFile, readdir, stat, writeFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, relative, resolve, sep, dirname } from "node:path";
+import { arquivoBloqueado, exigirSemSegredo } from "../seguranca/denylist";
 
 /**
  * Tools de código (Fase 20 — missão de agente) — a fronteira que faz o
@@ -13,11 +15,18 @@ import { join, relative, resolve, sep } from "node:path";
  * nunca se misturam, então não existe injeção possível via texto que o
  * modelo decida colocar num parâmetro.
  *
- * Escopo deliberadamente só-leitura/só-verificação nesta fase: listar,
- * ler, typecheck, build, testes (allowlist), git status/diff. Escrever
- * ou editar arquivo do próprio Jarvis fica de fora — autoedição de código
- * exige aprovação/diff/rollback que ainda não existe (ver relatório
- * final, seção Remaining). Nenhuma Tool aqui muda nada em disco.
+ * Escopo original (Fase 20) era só-leitura/só-verificação. Fase 22
+ * acrescenta UMA Tool de escrita (`escreverArquivoProjeto`) — nunca
+ * exposta direto ao modelo sem aprovação: é registrada em
+ * ferramentas/registro.ts com `exigeAprovacaoExplicita: true`, então o
+ * executor de Plano (jobs/handlers/plano-orquestrado.ts) sempre para em
+ * AGUARDANDO_APROVACAO antes de rodar, e só prossegue depois de
+ * aprovação explícita do Cacique via /api/aprovacoes (ver motor.ts,
+ * responderAprovacao — o passo específico é retomado por
+ * plano_passo_id, nunca "toda Tool desse nome fica aprovada"). Escreve
+ * o arquivo INTEIRO (substituição completa, não patch parcial) — mais
+ * simples de raciocinar sobre correção que aplicar um diff arbitrário, e
+ * o `git diff` real depois de escrever já é a evidência do que mudou.
  *
  * RAIZ (achado real, Fase 20): em dev, `process.cwd()` já É o checkout
  * completo do repositório (código + .git + testes). Em produção, o
@@ -78,6 +87,74 @@ export async function lerArquivoProjeto(caminhoRelativo: string): Promise<{ cont
   const bruto = await readFile(alvo, "utf8");
   const truncado = bruto.length > LIMITE_BYTES_ARQUIVO;
   return { conteudo: truncado ? bruto.slice(0, LIMITE_BYTES_ARQUIVO) : bruto, truncado, tamanhoBytes: info.size };
+}
+
+const EXTENSOES_EDITAVEIS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".json", ".md", ".mdx", ".css", ".yml", ".yaml", ".txt"]);
+const LIMITE_BYTES_ESCRITA = 200_000;
+
+export type ResultadoEscrita = {
+  caminho: string;
+  criouArquivoNovo: boolean;
+  bytesAntes: number | null;
+  bytesDepois: number;
+  conteudoAnterior: string | null; // null só quando é arquivo novo — evidência pra quem revisa antes de aprovar
+};
+
+/**
+ * Escreve o conteúdo INTEIRO de um arquivo de texto do repositório —
+ * substituição completa, nunca patch parcial (ver nota no topo do
+ * arquivo). Sempre chamada só DEPOIS de aprovação explícita (a Tool que
+ * a expõe tem `exigeAprovacaoExplicita: true`; ninguém deveria chamar
+ * esta função diretamente fora desse caminho). Três fronteiras
+ * independentes, todas obrigatórias:
+ *
+ * 1. path — nunca sai da raiz (resolverDentroDoRepo), nunca em cima de
+ *    segredo/credencial/banco (caminhoBloqueado local + arquivoBloqueado
+ *    compartilhado com o indexador, mais abrangente — as duas rodam,
+ *    nenhuma sozinha é suficiente).
+ * 2. extensão — só tipos de texto/código conhecidos (EXTENSOES_EDITAVEIS);
+ *    nunca binário, nunca lockfile, nunca dentro de node_modules/.git.
+ * 3. conteúdo — nunca escreve um valor que pareça segredo real
+ *    (exigirSemSegredo, o mesmo filtro que já protege a memória do
+ *    Jarvis desde a Fase 9) — proteção mesmo que o modelo, por engano,
+ *    tente colar uma chave de API dentro de um arquivo de código.
+ */
+export async function escreverArquivoProjeto(caminhoRelativo: string, conteudo: string): Promise<ResultadoEscrita> {
+  if (caminhoBloqueado(caminhoRelativo) || arquivoBloqueado(caminhoRelativo)) {
+    throw new Error("escrita bloqueada — caminho de segredo/dado/dependência, nunca escrito por Tool");
+  }
+  const ext = caminhoRelativo.slice(caminhoRelativo.lastIndexOf(".")).toLowerCase();
+  if (!EXTENSOES_EDITAVEIS.has(ext)) {
+    throw new Error(`escrita bloqueada — extensão "${ext}" fora da allowlist de tipos editáveis`);
+  }
+  if (conteudo.length > LIMITE_BYTES_ESCRITA) {
+    throw new Error(`conteúdo excede o limite de ${LIMITE_BYTES_ESCRITA} bytes por escrita`);
+  }
+  exigirSemSegredo(conteudo, `escreverArquivoProjeto:${caminhoRelativo}`);
+
+  const alvo = resolverDentroDoRepo(caminhoRelativo);
+  const jaExistia = existsSync(alvo);
+  let conteudoAnterior: string | null = null;
+  let bytesAntes: number | null = null;
+  if (jaExistia) {
+    const info = await stat(alvo);
+    if (!info.isFile()) throw new Error("caminho existe mas não é um arquivo");
+    conteudoAnterior = await readFile(alvo, "utf8");
+    bytesAntes = info.size;
+  } else {
+    await mkdir(dirname(alvo), { recursive: true });
+  }
+
+  await writeFile(alvo, conteudo, "utf8");
+  const infoDepois = await stat(alvo);
+
+  return {
+    caminho: caminhoRelativo,
+    criouArquivoNovo: !jaExistia,
+    bytesAntes,
+    bytesDepois: infoDepois.size,
+    conteudoAnterior,
+  };
 }
 
 /** Allowlist deliberada — só os testes puros (sem servidor HTTP, sem rede, sem escrita concorrente no mesmo banco) rodam via Tool autônoma. Suite completa/testes de rede continuam manuais (ver relatório final). */

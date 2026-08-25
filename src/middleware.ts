@@ -46,8 +46,13 @@ export function middleware(req: NextRequest) {
 
   // Rota de página. Sem token configurado: modo aberto, nunca gateado
   // (comportamento local de sempre). Com token: exige sessão válida, exceto
-  // a própria /login (senão o redirect vira um loop infinito).
-  if (token && pathname !== "/login" && !sessaoValida(cookieSessao)) {
+  // a própria /login (senão o redirect vira um loop infinito) e as duas
+  // páginas legais (Fase 22 — achado real: /politica-de-privacidade e
+  // /termos-de-servico voltavam 307 pro /login, mas o Google exige essas
+  // páginas acessíveis SEM autenticação pra revisão de verificação OAuth
+  // — conteúdo é só texto público, nunca dado do operador).
+  const PAGINAS_PUBLICAS = new Set(["/login", "/politica-de-privacidade", "/termos-de-servico"]);
+  if (token && !PAGINAS_PUBLICAS.has(pathname) && !sessaoValida(cookieSessao)) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
   return NextResponse.next();

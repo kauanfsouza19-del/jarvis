@@ -24,6 +24,7 @@ import { listarEventos, criarEvento, type EventoResumo } from "../google/calenda
 import {
   listarArquivosProjeto,
   lerArquivoProjeto,
+  escreverArquivoProjeto,
   rodarTestesJarvis,
   rodarTypecheckJarvis,
   rodarBuildJarvis,
@@ -31,6 +32,7 @@ import {
   gitDiffJarvis,
   type ArquivoListado,
   type ResultadoComando,
+  type ResultadoEscrita,
 } from "./codigo";
 import type { Ferramenta, ResultadoFerramenta } from "./tipos";
 
@@ -696,6 +698,30 @@ const codigoGitStatus: Ferramenta<Record<string, never>, ResultadoComando> = {
   executar: async () => ({ ok: true, saida: await gitStatusJarvis() }),
 };
 
+// Fase 22 — única Tool de ESCRITA de código desta esteira. WRITE +
+// exigeAprovacaoExplicita:true = disponibilidadeDe() nunca reporta
+// DISPONIVEL (ver ferramentas/tipos.ts) — o executor de Plano SEMPRE
+// para em AGUARDANDO_APROVACAO antes de rodar (ver plano-orquestrado.ts,
+// jaAprovado checado por plano_passo_id específico). Nunca executa sem
+// aprovação explícita do Cacique, mesmo que o modelo peça.
+const codigoEscreverArquivo: Ferramenta<{ caminho: string; conteudo: string }, ResultadoEscrita> = {
+  nome: "codigo.escrever_arquivo",
+  descricao: "Escreve o conteúdo completo de um arquivo de texto do repositório Jarvis (substituição total, não patch). SEMPRE exige aprovação explícita antes de rodar.",
+  capacidade: "escrever_arquivo_jarvis",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  validarEntrada: (e): e is { caminho: string; conteudo: string } =>
+    typeof e === "object" && e !== null && typeof (e as { caminho?: unknown }).caminho === "string" && typeof (e as { conteudo?: unknown }).conteudo === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await escreverArquivoProjeto(entrada.caminho, entrada.conteudo) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao escrever" };
+    }
+  },
+};
+
 const codigoGitDiff: Ferramenta<{ caminho?: string }, ResultadoComando> = {
   nome: "codigo.git_diff",
   descricao: "Roda 'git diff --stat' (opcionalmente restrito a um caminho) no repositório Jarvis.",
@@ -756,6 +782,7 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   calendarCriar as unknown as Ferramenta,
   codigoListarArquivos as unknown as Ferramenta,
   codigoLerArquivo as unknown as Ferramenta,
+  codigoEscreverArquivo as unknown as Ferramenta,
   codigoRodarTestes as unknown as Ferramenta,
   codigoRodarTypecheck as unknown as Ferramenta,
   codigoRodarBuild as unknown as Ferramenta,

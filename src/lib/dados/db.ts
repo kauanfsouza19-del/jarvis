@@ -676,6 +676,24 @@ function migrar(d: DatabaseSync) {
     ];
     for (const [termo, categoria, peso] of padroes) inserirInteresse.run(crypto.randomUUID(), termo, categoria, peso);
   }
+
+  // aprovacoes ganhou plano_passo_id (Fase 22 — achado real testando o
+  // fluxo de aprovação de verdade contra um Plano de DAG, não só o job de
+  // Tool única de handlers/executar-ferramenta.ts): sem isto, aprovar um
+  // passo de um Plano com VÁRIOS passos usando a MESMA capacidade
+  // aprovaria todos eles (a checagem antiga era só job_id+ferramenta,
+  // nunca o passo específico) — e pior, aprovar não fazia o passo
+  // pausado voltar a rodar nenhuma vez, porque nada além do job_id+
+  // ferramenta era checado no retomada (ver plano-orquestrado.ts,
+  // executarPasso). NULL pra toda aprovação antiga (nunca vinha de um
+  // Plano de DAG antes desta fase — comportamento delas continua
+  // idêntico).
+  const colunasAprovacoes = new Set(
+    (d.prepare("PRAGMA table_info(aprovacoes)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!colunasAprovacoes.has("plano_passo_id")) {
+    d.exec("ALTER TABLE aprovacoes ADD COLUMN plano_passo_id TEXT REFERENCES plano_passos(id) ON DELETE CASCADE");
+  }
 }
 
 export function id(): string {

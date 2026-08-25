@@ -205,6 +205,31 @@ ok("'Ajuste esse fluxo.' → EXECUTAR (achado: 'ajusta' não casava 'ajuste')", 
 const rAjustar = resolverContexto("Ajustar esse fluxo.", lexico);
 ok("'Ajustar esse fluxo.' → EXECUTAR (infinitivo, já funcionava)", rAjustar.acao === "EXECUTAR", rAjustar.acao);
 
+// Achado real (Fase 22 — verificando o item de build da própria missão:
+// "Rode o build de produção do Jarvis" caía em INDEFINIDA).
+const rRode = resolverContexto("Rode o build de produção do Jarvis.", lexico);
+ok("'Rode o build...' → EXECUTAR (achado: 'roda/rodar' não casava 'rode')", rRode.acao === "EXECUTAR", rRode.acao);
+
+const rExecute = resolverContexto("Execute os testes do Jarvis.", lexico);
+ok("'Execute os testes...' → EXECUTAR (achado: 'executa/executar' não casava 'execute')", rExecute.acao === "EXECUTAR", rExecute.acao);
+
+const rPublique = resolverContexto("Publique essa nota.", lexico);
+ok("'Publique essa nota.' → EXECUTAR (achado: c→qu, 'publica' não casava 'publique')", rPublique.acao === "EXECUTAR", rPublique.acao);
+
+const rMude = resolverContexto("Mude essa configuração.", lexico);
+ok("'Mude essa configuração.' → EXECUTAR (achado: 'muda/mudar' não casava 'mude')", rMude.acao === "EXECUTAR", rMude.acao);
+
+const rAltere = resolverContexto("Altere esse valor.", lexico);
+ok("'Altere esse valor.' → EXECUTAR (achado: 'altera/alterar' não casava 'altere')", rAltere.acao === "EXECUTAR", rAltere.acao);
+
+// "monta/monte" deliberadamente FORA da cobertura — "monte" também é
+// substantivo comum ("um monte de arquivos"); só o infinitivo inequívoco
+// continua reconhecido.
+const rMontar = resolverContexto("Montar o relatório final.", lexico);
+ok("'Montar o relatório final.' → EXECUTAR (infinitivo, inequívoco)", rMontar.acao === "EXECUTAR", rMontar.acao);
+const rMonteSubstantivo = resolverContexto("Tem um monte de arquivo velho aqui.", lexico);
+ok("'um monte de arquivo' NÃO vira EXECUTAR (substantivo comum, exclusão deliberada)", rMonteSubstantivo.acao !== "EXECUTAR", rMonteSubstantivo.acao);
+
 // Distinção preservada: RESPONDER continua vencendo pergunta de verdade,
 // mesmo com verbo de EXECUTAR embutido — nunca "todo imperativo vira alta
 // confiança" (a missão pede correção semântica, não confiança global).

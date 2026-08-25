@@ -13,6 +13,7 @@ import { ferramentaDisponivelPara, ferramentaQueRequerAprovacao, disponibilidade
 import { listarProspects } from "../../prospeccao/repositorio";
 import { fecharResultadoDeProspects, fecharResultadoGenerico } from "../resultados";
 import { rotear, chamarComFallback, algumProvedorDisponivel } from "../../modelo/roteador";
+import { db } from "../../dados/db";
 import {
   registrarHandler,
   atualizarJob,
@@ -579,31 +580,49 @@ async function executarPasso(jobId: string, objetivo: string, passo: PlanoPasso)
     return;
   }
 
-  const ferramenta = ferramentaDisponivelPara(passo.capacidade);
+  let ferramenta = ferramentaDisponivelPara(passo.capacidade);
   if (!ferramenta) {
     const requerAprovacao = ferramentaQueRequerAprovacao(passo.capacidade);
     if (requerAprovacao) {
-      atualizarPasso(passo.id, { status: "AGUARDANDO_APROVACAO" });
-      pausarParaAprovacao(jobId, {
-        ferramenta: requerAprovacao.nome,
-        nivelPermissao: requerAprovacao.nivelPermissao,
-        titulo: passo.descricao,
-        descricao: `Objetivo: ${objetivo}. Passo: ${passo.descricao}.`,
-        risco: `Nível de permissão: ${requerAprovacao.nivelPermissao}.`,
-      });
+      // Achado real (Fase 22): sem esta checagem, um passo aprovado
+      // pausava DE NOVO pra sempre — ferramentaDisponivelPara() nunca
+      // reporta DISPONIVEL pra Tool com exigeAprovacaoExplicita/nível
+      // alto, então este bloco rodava incondicionalmente toda vez.
+      // Mesma idempotência que handlers/executar-ferramenta.ts sempre
+      // teve (lá por job_id+ferramenta); aqui por passo.id específico —
+      // necessário porque um Plano pode ter VÁRIOS passos com a mesma
+      // capacidade (ex: editar dois arquivos), e aprovar um nunca deve
+      // aprovar os outros.
+      const jaAprovado = db()
+        .prepare(`SELECT 1 FROM aprovacoes WHERE plano_passo_id = ? AND estado = 'APROVADA'`)
+        .get(passo.id);
+      if (jaAprovado) {
+        ferramenta = requerAprovacao;
+      } else {
+        atualizarPasso(passo.id, { status: "AGUARDANDO_APROVACAO" });
+        pausarParaAprovacao(jobId, {
+          ferramenta: requerAprovacao.nome,
+          nivelPermissao: requerAprovacao.nivelPermissao,
+          titulo: passo.descricao,
+          descricao: `Objetivo: ${objetivo}. Passo: ${passo.descricao}.`,
+          risco: `Nível de permissão: ${requerAprovacao.nivelPermissao}.`,
+          planoPassoId: passo.id,
+        });
+        return;
+      }
+    } else {
+      // Mensagem honesta sobre O MOTIVO real, não um "indisponível" genérico —
+      // é a diferença entre "isso não existe ainda" (NAO_IMPLEMENTADO) e "isso
+      // existe mas falta credencial" (REQUER_CREDENCIAL), a mesma distinção
+      // que /api/ferramentas já expõe.
+      const disp = disponibilidadeDaCapacidade(passo.capacidade);
+      const motivo =
+        disp === "REQUER_CREDENCIAL"
+          ? `Capacidade "${passo.capacidade}" existe mas falta credencial configurada.`
+          : `Capacidade "${passo.capacidade}" ainda não está implementada.`;
+      atualizarPasso(passo.id, { status: "FALHOU", erro: motivo, concluido_em: agora() });
       return;
     }
-    // Mensagem honesta sobre O MOTIVO real, não um "indisponível" genérico —
-    // é a diferença entre "isso não existe ainda" (NAO_IMPLEMENTADO) e "isso
-    // existe mas falta credencial" (REQUER_CREDENCIAL), a mesma distinção
-    // que /api/ferramentas já expõe.
-    const disp = disponibilidadeDaCapacidade(passo.capacidade);
-    const motivo =
-      disp === "REQUER_CREDENCIAL"
-        ? `Capacidade "${passo.capacidade}" existe mas falta credencial configurada.`
-        : `Capacidade "${passo.capacidade}" ainda não está implementada.`;
-    atualizarPasso(passo.id, { status: "FALHOU", erro: motivo, concluido_em: agora() });
-    return;
   }
 
   try {

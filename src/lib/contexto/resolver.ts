@@ -247,7 +247,16 @@ const ACOES: Array<[Acao, RegExp]> = [
   // "ajust(a|ar|e)" usam \b depois do "e" só onde havia risco real de colidir
   // com outra palavra comum (gere→"gerente"); implementa/implemente não
   // precisa disso (não existe colisão plausível).
-  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|ger(a|ar|e\b)|escreve|escrever|manda|enviar|publica|implementa|implemente|corrig|corrij|ajust(a|ar|e)|muda|mudar|altera|list(a|ar|e\b))/],
+  // Achado real (Fase 22, verificando o próprio item de build da missão):
+  // "roda/rodar" não casava "rode" (mesmo padrão de gera/ajusta/implementa —
+  // imperativo formal-você troca a final "a" por "e" em verbos -AR
+  // regulares). Mesmo fix pra executar→execute, mudar→mude, alterar→altere.
+  // "publica" tem a MESMA alternância c→qu de explicar/verificar → "publique"
+  // (nunca "publice"). "monta/montar" fica DE FORA de propósito — "monte" é
+  // também substantivo comum ("um monte de arquivos"), risco real de falso
+  // positivo que nenhuma forma de boundary resolve; só a forma "montar"
+  // (infinitivo, inequívoco) continua coberta.
+  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|rod(a|ar|e\b)|execut(a|ar|e\b)|sobe|subir|montar|ger(a|ar|e\b)|escreve|escrever|manda|enviar|publi(ca|car|que\b)|implementa|implemente|corrig|corrij|ajust(a|ar|e)|mud(a|ar|e)|alter(a|ar|e)|list(a|ar|e\b))/],
   // "verifica" nunca casava "verifique" — mesma alternância c→qu de
   // explicar/publicar (achado real, Fase 21: "verifique se há erros de
   // typecheck" caía em ANALISAR/INDEFINIDA e nunca chegava ao Orquestrador).

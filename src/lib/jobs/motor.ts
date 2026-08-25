@@ -306,18 +306,26 @@ export function retentarJob(jobId: string): { ok: boolean; motivo?: string } {
  * `exigeAprovacaoExplicita: true` (SEND/DELETE/FINANCIAL/EXTERNAL_COMMUNICATION/
  * ACCOUNT_ACCESS — ver src/lib/ferramentas/tipos.ts). O job para em
  * AGUARDANDO_APROVACAO e só continua se o Cacique aprovar explicitamente.
+ *
+ * `planoPassoId` (Fase 22, achado real): sem isto, aprovação de um Plano
+ * de DAG só era rastreada por job_id+ferramenta — em um Plano com VÁRIOS
+ * passos usando a MESMA capacidade (ex: editar dois arquivos diferentes),
+ * aprovar um aprovava os outros também, e nada fazia o passo pausado
+ * voltar a rodar de verdade (ver responderAprovacao). Job de Tool única
+ * (handlers/executar-ferramenta.ts) não precisa disto — não recebe
+ * planoPassoId, comportamento idêntico a antes.
  */
 export function pausarParaAprovacao(
   jobId: string,
-  entrada: { ferramenta: string; nivelPermissao: string; titulo: string; descricao: string; risco?: string },
+  entrada: { ferramenta: string; nivelPermissao: string; titulo: string; descricao: string; risco?: string; planoPassoId?: string },
 ): string {
   const id = gerarId();
   db()
     .prepare(
-      `INSERT INTO aprovacoes (id, job_id, ferramenta, nivel_permissao, titulo, descricao, risco)
-       VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO aprovacoes (id, job_id, ferramenta, nivel_permissao, titulo, descricao, risco, plano_passo_id)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
-    .run(id, jobId, entrada.ferramenta, entrada.nivelPermissao, entrada.titulo, entrada.descricao, entrada.risco ?? null);
+    .run(id, jobId, entrada.ferramenta, entrada.nivelPermissao, entrada.titulo, entrada.descricao, entrada.risco ?? null, entrada.planoPassoId ?? null);
 
   atualizarJob(jobId, { status: "AGUARDANDO_APROVACAO", etapa: `Aguardando aprovação: ${entrada.titulo}` });
   emitirEvento(jobId, "aguardando_aprovacao", entrada.titulo);
@@ -332,10 +340,24 @@ export function listarAprovacoes(soPendentes = false) {
   return db().prepare(`SELECT * FROM aprovacoes ${where} ORDER BY criado_em DESC LIMIT 50`).all();
 }
 
-/** Aprovar RETOMA o job (redispara o handler); rejeitar CANCELA o job com o motivo dito. */
+/**
+ * Aprovar RETOMA o job (redispara o handler); rejeitar CANCELA o job com o
+ * motivo dito.
+ *
+ * Fase 22 — passo de Plano (plano_passo_id preenchido) precisa de um passo
+ * extra que o job de Tool única nunca precisou: o `plano_passos.status`
+ * dele fica travado em AGUARDANDO_APROVACAO, e `passosProntos()` só
+ * escolhe passo PENDENTE — sem resetar aqui, redisparar o handler nunca
+ * fazia esse passo específico rodar de novo (achado real, nunca chegou a
+ * aparecer porque nenhuma Tool com aprovação tinha rodado dentro de um
+ * Plano de DAG até agora). `executarPasso` (plano-orquestrado.ts) já
+ * checa se existe aprovação APROVADA para o próprio passo.id antes de
+ * pausar de novo — mesma idempotência que executar-ferramenta.ts sempre
+ * teve pra job_id+ferramenta, agora no nível certo pra Plano.
+ */
 export function responderAprovacao(aprovacaoId: string, aprovada: boolean): { ok: boolean; motivo?: string } {
   const a = db().prepare(`SELECT * FROM aprovacoes WHERE id = ?`).get(aprovacaoId) as
-    | { id: string; job_id: string | null; estado: string; titulo: string }
+    | { id: string; job_id: string | null; estado: string; titulo: string; plano_passo_id: string | null }
     | undefined;
   if (!a) return { ok: false, motivo: "aprovacao_nao_encontrada" };
   if (a.estado !== "PENDENTE") return { ok: false, motivo: `já respondida (${a.estado})` };
@@ -345,6 +367,16 @@ export function responderAprovacao(aprovacaoId: string, aprovada: boolean): { ok
     .run(aprovada ? "APROVADA" : "REJEITADA", agora(), aprovacaoId);
   auditar({ acao: aprovada ? "aprovacao.aprovar" : "aprovacao.rejeitar", resultado: aprovacaoId });
 
+  if (a.plano_passo_id) {
+    if (aprovada) {
+      db().prepare(`UPDATE plano_passos SET status = 'PENDENTE', erro = NULL WHERE id = ?`).run(a.plano_passo_id);
+    } else {
+      db()
+        .prepare(`UPDATE plano_passos SET status = 'FALHOU', erro = ?, concluido_em = ? WHERE id = ?`)
+        .run("Aprovação rejeitada pelo Cacique.", agora(), a.plano_passo_id);
+    }
+  }
+
   if (!a.job_id) return { ok: true };
   const job = obterJob(a.job_id);
   if (!job) return { ok: true };
@@ -353,6 +385,16 @@ export function responderAprovacao(aprovacaoId: string, aprovada: boolean): { ok
     emitirEvento(a.job_id, "retomado", `Aprovado: ${a.titulo}.`);
     dispararExecucao(a.job_id, job.tipo, JSON.parse(job.parametros));
   } else {
+    // Job de Tool única (plano_passo_id null) continua cancelando o job
+    // inteiro — comportamento de sempre. Job de Plano com o passo já
+    // marcado FALHOU acima: redispara em vez de cancelar de propósito —
+    // o loop principal decide sozinho se os OUTROS passos independentes
+    // continuam (isolamento de falha já existente) ou se o plano fecha.
+    if (a.plano_passo_id) {
+      emitirEvento(a.job_id, "retomado", `Rejeitado: ${a.titulo}. Continuando com os demais passos, se houver.`);
+      dispararExecucao(a.job_id, job.tipo, JSON.parse(job.parametros));
+      return { ok: true };
+    }
     atualizarJob(a.job_id, { status: "CANCELADO", concluido_em: agora() });
     emitirEvento(a.job_id, "cancelado", `Rejeitado: ${a.titulo}.`);
     promoverProximosDaFila();

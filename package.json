@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "verificar": "tsc --noEmit"
+    "verificar": "tsc --noEmit",
+    "test": "node scripts/rodar-testes.mjs",
+    "test:puros": "node scripts/rodar-testes.mjs --puros"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
