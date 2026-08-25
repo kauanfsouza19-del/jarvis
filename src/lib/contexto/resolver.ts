@@ -204,7 +204,17 @@ const INTENCOES: Array<[Intencao, RegExp]> = [
     // "categoria de mercado a buscar", não "meu cliente específico".
     /\b(procura|encontra|pesquisa|prospect)\w*\b.{0,60}\b(pizzari|hamburgu|a[cç]a[ií]|esfirrari|esfihari|lanchonete|restaurante|e-?commerce|loja virtual|corretor|imobiliari|neg[oó]cio|lead|cliente potencial)|\bprospec[cç][aã]o\b|\b(pizzarias|hamburguerias|a[cç]a[ií]terias|esfirrarias|esfihar[ií]as|lanchonetes|restaurantes|e-?commerces|lojas virtuais)\b/,
   ],
-  ["AUDITORIA_ADS", /\b(campanh|an[uú]nci|google ads|meta ads|adwords|palavra-?chave|negativa|lance|cpa|cpc|roas|ctr|conjunto de an[uú]ncio|audit)/],
+  // Achado real (Fase 27d, testando ao vivo): "quais contas tenho no meta?"
+  // nunca batia aqui (só "meta ads" junto, nunca "meta" sozinho — de
+  // propósito, "meta" sozinho é palavra comum em português/"objetivo" e
+  // daria falso positivo enorme). O problema real é que essa pergunta é
+  // TODA composta de vocabulário de negócio genérico ("quais contas
+  // tenho") — o sinal que a torna inequivocamente sobre Meta Ads é só a
+  // combinação "no/do meta" (empresa) ou termos de conta/portfólio que
+  // não fazem sentido fora desse domínio (business manager, pixel,
+  // conta de anúncio) — adicionados como alternativas ESPECÍFICAS, nunca
+  // "meta" isolado.
+  ["AUDITORIA_ADS", /\b(campanh|an[uú]nci|google ads|meta ads|adwords|palavra-?chave|negativa|lance|cpa|cpc|roas|ctr|conjunto de an[uú]ncio|audit|\bno meta\b|\bdo meta\b|business manager|\bpixel\b|contas? de an[uú]ncio|contas? (do |no )?meta ads)/],
   ["PRODUCAO_CRIATIVA", /\b(criativ|copy|headline|hook|gancho|vsl|roteiro|thumb|carrossel|est[eé]tica|arte|pe[cç]a|storyboard|legenda)/],
   ["PRODUTO", /\b(onboarding|feature|funcionalidade|tela|fluxo do (app|produto|usu[aá]rio)|ux do produto|bug|backlog|roadmap|cadastro|checkout)/],
   ["ESTRATEGIA", /\b(posicionament|estrat[eé]gi|pre[cç]ific|oferta|funil|lan[cç]amento|concorr|mercado|proposta de valor|icp)/],

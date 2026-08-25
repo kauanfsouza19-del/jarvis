@@ -186,12 +186,26 @@ export async function POST(req: Request) {
   // de agência, sempre respondido em conversa direta, nunca virou Job).
   const analiseDoProprioJarvis = resolvido.acao === "ANALISAR" && resolvido.projetoNome === "JARVIS";
 
+  // Fase 27d — achado real testando em produção: "Quais contas tenho no
+  // Meta?" tem AÇÃO=RESPONDER ("quais" é vocabulário de pergunta comum,
+  // ver resolver.ts) — sem isto, qualquer pergunta sobre Meta/Google Ads
+  // caía direto na conversa normal (sem Tool nenhuma), mesmo com as Tools
+  // reais (meta_ads.listar_contas etc.) já registradas e testadas. Mesmo
+  // princípio do analiseDoProprioJarvis acima: INTENÇÃO específica o
+  // bastante pra nunca sequestrar conversa genérica (ver o vocabulário
+  // estreito adicionado em AUDITORIA_ADS), então abre a porta do
+  // Orquestrador independente da AÇÃO detectada (RESPONDER/ANALISAR/
+  // EXECUTAR) — é uma pergunta de DADO real, não uma explicação de
+  // conceito, mesmo fraseada como pergunta.
+  const perguntaSobreMetaOuGoogleAds = resolvido.intencao === "AUDITORIA_ADS" && resolvido.confianca !== "BAIXA";
+
   if (
     detectarComandoDeTarefa(mensagem, resolvido) ||
     candidatoConteudo ||
     (candidatoDerivado && temResultadoAnteriorParaDerivar) ||
     acaoExecutarComAlvo ||
-    analiseDoProprioJarvis
+    analiseDoProprioJarvis ||
+    perguntaSobreMetaOuGoogleAds
   ) {
     const orquestrado = await orquestrar(corpo.conversa_id, mensagem, resolvido);
     if (orquestrado) {
