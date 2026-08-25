@@ -34,6 +34,8 @@ import {
   type ResultadoComando,
   type ResultadoEscrita,
 } from "./codigo";
+import { listarFerramentasMcp, chamarFerramentaMcp, type FerramentaMcp } from "../mcp/cliente";
+import { obterServidorMcp } from "../mcp/registro";
 import type { Ferramenta, ResultadoFerramenta } from "./tipos";
 
 /**
@@ -739,6 +741,45 @@ const codigoGitDiff: Ferramenta<{ caminho?: string }, ResultadoComando> = {
   },
 };
 
+/* ── MCP (Fase 26) — cliente real, testado contra servidor de referência ──
+ * `servidorId` é sempre um ID do allowlist (mcp/registro.ts), NUNCA
+ * comando/args aceitos direto de entrada — a mesma disciplina de
+ * segurança de toda Tool desta esteira que executa processo.
+ */
+
+const mcpListarFerramentas: Ferramenta<{ servidorId: string }, { servidor: string; versao: string; ferramentas: FerramentaMcp[] }> = {
+  nome: "mcp.listar_ferramentas",
+  descricao: "Conecta a um servidor MCP registrado (allowlist) e lista suas ferramentas reais.",
+  capacidade: "inspecionar_mcp",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { servidorId: string } => typeof e === "object" && e !== null && typeof (e as { servidorId?: unknown }).servidorId === "string",
+  executar: async (entrada) => {
+    const servidor = obterServidorMcp(entrada.servidorId);
+    if (!servidor) return { ok: false, erro: `servidor MCP "${entrada.servidorId}" não está no registro (ver mcp/registro.ts)` };
+    const r = await listarFerramentasMcp(servidor.config);
+    return r.ok ? { ok: true, saida: { servidor: r.dados.nomeServidor, versao: r.dados.versaoServidor, ferramentas: r.dados.ferramentas } } : { ok: false, erro: r.erro };
+  },
+};
+
+const mcpChamarFerramenta: Ferramenta<{ servidorId: string; ferramenta: string; argumentos?: unknown }, unknown> = {
+  nome: "mcp.chamar_ferramenta",
+  descricao: "Conecta a um servidor MCP registrado (allowlist) e executa uma das ferramentas reais dele.",
+  capacidade: "executar_mcp",
+  nivelPermissao: "WRITE", // servidor MCP externo pode ter efeito colateral real — mesma régua de qualquer WRITE já estabelecida (sem aprovação obrigatória por padrão, mas nunca READ)
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { servidorId: string; ferramenta: string; argumentos?: unknown } =>
+    typeof e === "object" && e !== null && typeof (e as { servidorId?: unknown }).servidorId === "string" && typeof (e as { ferramenta?: unknown }).ferramenta === "string",
+  executar: async (entrada) => {
+    const servidor = obterServidorMcp(entrada.servidorId);
+    if (!servidor) return { ok: false, erro: `servidor MCP "${entrada.servidorId}" não está no registro (ver mcp/registro.ts)` };
+    const r = await chamarFerramentaMcp(servidor.config, entrada.ferramenta, entrada.argumentos ?? {});
+    return r.ok ? { ok: true, saida: r.dados } : { ok: false, erro: r.erro };
+  },
+};
+
 function stub(
   nome: string,
   descricao: string,
@@ -788,6 +829,8 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   codigoRodarBuild as unknown as Ferramenta,
   codigoGitStatus as unknown as Ferramenta,
   codigoGitDiff as unknown as Ferramenta,
+  mcpListarFerramentas as unknown as Ferramenta,
+  mcpChamarFerramenta as unknown as Ferramenta,
   stub("whatsapp.enviar", "Envia mensagem de WhatsApp em nome do Cacique.", "enviar_mensagem_whatsapp", "EXTERNAL_COMMUNICATION", true, "EVOLUTION_API_URL"),
   stub("meta_ads.analisar", "Lê campanhas de uma conta Meta Ads autorizada.", "analisar_meta_ads", "READ", false),
   stub("google_ads.analisar", "Lê campanhas de uma conta Google Ads autorizada.", "analisar_google_ads", "READ", false),
