@@ -18,10 +18,20 @@ import { join, relative, resolve, sep } from "node:path";
  * ou editar arquivo do próprio Jarvis fica de fora — autoedição de código
  * exige aprovação/diff/rollback que ainda não existe (ver relatório
  * final, seção Remaining). Nenhuma Tool aqui muda nada em disco.
+ *
+ * RAIZ (achado real, Fase 20): em dev, `process.cwd()` já É o checkout
+ * completo do repositório (código + .git + testes). Em produção, o
+ * container roda a imagem MÍNIMA (Dockerfile, Fase 15/16 — só
+ * node_modules podado + .next compilado, de propósito, pra não copiar
+ * `dados/` real pro artefato) — sem `src/`, sem `testes/`, sem `.git`.
+ * `JARVIS_REPO_PATH` aponta pro bind-mount somente-leitura do checkout
+ * real do host (/root/jarvis, o mesmo usado pelo deploy) quando definido;
+ * sem a variável, cai em `process.cwd()` (dev local, comportamento
+ * inalterado). Nunca cria/edita nada nesse mount — só leitura/inspeção.
  */
 
 const execFileAsync = promisify(execFile);
-const RAIZ = process.cwd();
+const RAIZ = process.env.JARVIS_REPO_PATH ?? process.cwd();
 
 /** Fronteira de path — nunca deixa sair da raiz do repositório, mesmo com "../../../etc/passwd". */
 function resolverDentroDoRepo(caminhoRelativo: string): string {
