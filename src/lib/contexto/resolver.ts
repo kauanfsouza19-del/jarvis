@@ -247,8 +247,11 @@ const ACOES: Array<[Acao, RegExp]> = [
   // "ajust(a|ar|e)" usam \b depois do "e" só onde havia risco real de colidir
   // com outra palavra comum (gere→"gerente"); implementa/implemente não
   // precisa disso (não existe colisão plausível).
-  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|ger(a|ar|e\b)|escreve|escrever|manda|enviar|publica|implementa|implemente|corrig|corrij|ajust(a|ar|e)|muda|mudar|altera)/],
-  ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verifica|olha|conferir)/],
+  ["EXECUTAR", /\b(cri(a|ar|e)|faz|fa[cç]a|fazer|roda|rodar|executa|executar|sobe|subir|monta|montar|ger(a|ar|e\b)|escreve|escrever|manda|enviar|publica|implementa|implemente|corrig|corrij|ajust(a|ar|e)|muda|mudar|altera|list(a|ar|e\b))/],
+  // "verifica" nunca casava "verifique" — mesma alternância c→qu de
+  // explicar/publicar (achado real, Fase 21: "verifique se há erros de
+  // typecheck" caía em ANALISAR/INDEFINIDA e nunca chegava ao Orquestrador).
+  ["ANALISAR", /\b(analis|revis[aá]|audit|diagnostic|investig|compar|avali|checa|verific|verifiqu|olha|conferir)/],
   ["PLANEJAR", /\b(plane|planeja|estrutura|organiza|define|definir|decide|decidir|pensa|pensar em|como (eu )?(fa[cç]o|devo)|qual (o )?melhor|estrat[eé]gi)/],
   ["REVISAR", /\b(revis|melhor(a|ar)|otimiz|refina|ajust|aprimor)/],
 ];

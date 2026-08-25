@@ -177,7 +177,22 @@ export async function POST(req: Request) {
   // pros outros gatilhos desta condição.
   const acaoExecutarComAlvo = resolvido.acao === "EXECUTAR" && resolvido.confianca !== "BAIXA";
 
-  if (detectarComandoDeTarefa(mensagem, resolvido) || candidatoConteudo || (candidatoDerivado && temResultadoAnteriorParaDerivar) || acaoExecutarComAlvo) {
+  // Fase 21 — "verifique/audite o código do Jarvis" é ANALISAR, não
+  // EXECUTAR, mas é exatamente o pedido de auto-auditoria que o
+  // Orquestrador (com as capacidades de código da Fase 20) já sabe
+  // atender. Escopo deliberadamente estreito — só quando o projeto É o
+  // próprio Jarvis — pra NUNCA mudar o caminho já existente de "Preciso
+  // analisar aquela campanha da SS Aquecedores" (ANALISAR sobre cliente
+  // de agência, sempre respondido em conversa direta, nunca virou Job).
+  const analiseDoProprioJarvis = resolvido.acao === "ANALISAR" && resolvido.projetoNome === "JARVIS";
+
+  if (
+    detectarComandoDeTarefa(mensagem, resolvido) ||
+    candidatoConteudo ||
+    (candidatoDerivado && temResultadoAnteriorParaDerivar) ||
+    acaoExecutarComAlvo ||
+    analiseDoProprioJarvis
+  ) {
     const orquestrado = await orquestrar(corpo.conversa_id, mensagem, resolvido);
     if (orquestrado) {
       const texto = orquestrado.jobId

@@ -211,6 +211,24 @@ ok("'Ajustar esse fluxo.' → EXECUTAR (infinitivo, já funcionava)", rAjustar.a
 const rPerguntaComVerbo = resolverContexto("Explique como corrigir esse tipo de problema.", lexico);
 ok("pergunta com verbo de EXECUTAR embutido continua RESPONDER, não EXECUTAR", rPerguntaComVerbo.acao === "RESPONDER", rPerguntaComVerbo.acao);
 
+// Achados reais (Fase 21 — testando o próprio fluxo de agente em
+// produção): "liste"/"listar" faltavam em EXECUTAR (pedido de código real
+// caía em INDEFINIDA e nunca chegava no Orquestrador); "verifica" tinha o
+// mesmo problema de "explica"/"corrig" — nunca casava "verifique" (mesma
+// alternância c→qu de publicar/explicar).
+const rListe = resolverContexto("Liste os arquivos do Jarvis.", lexico);
+ok("'Liste os arquivos do Jarvis.' → EXECUTAR (achado: 'listar'/'liste' não existia)", rListe.acao === "EXECUTAR", rListe.acao);
+
+const rListar = resolverContexto("Listar os arquivos do Jarvis.", lexico);
+ok("'Listar os arquivos do Jarvis.' → EXECUTAR", rListar.acao === "EXECUTAR", rListar.acao);
+
+const rVerifique = resolverContexto("Verifique se há erros de typecheck no Jarvis.", lexico);
+ok(
+  "'Verifique se há erros de typecheck no Jarvis.' → ANALISAR (achado: 'verifica' não casava 'verifique')",
+  rVerifique.acao === "ANALISAR" && rVerifique.projetoNome === "JARVIS",
+  `acao=${rVerifique.acao} projeto=${rVerifique.projetoNome}`,
+);
+
 /* ── 3. modo interno, sem seletor ── */
 
 secao("3. Modo escolhido pelo sistema");
