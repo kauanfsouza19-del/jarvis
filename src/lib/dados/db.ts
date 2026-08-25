@@ -694,6 +694,36 @@ function migrar(d: DatabaseSync) {
   if (!colunasAprovacoes.has("plano_passo_id")) {
     d.exec("ALTER TABLE aprovacoes ADD COLUMN plano_passo_id TEXT REFERENCES plano_passos(id) ON DELETE CASCADE");
   }
+
+  // Papel de Desenvolvimento — mesmo padrão config-only dos outros papéis
+  // acima (Fase 23: o registro de Agente já existia e já era usado pelo
+  // Orquestrador desde a Fase 7 — escolherAgentePorCapacidades; as
+  // capacidades de código da Fase 20/21/22 só nunca tinham um Agente
+  // correspondente, então um Plano de auto-auditoria/escrita sempre
+  // ficava com agente_id null, mesmo funcionando).
+  const temPapelDesenvolvimento = (d.prepare("SELECT COUNT(*) n FROM agentes WHERE papel = 'desenvolvimento'").get() as { n: number }).n > 0;
+  if (!temPapelDesenvolvimento) {
+    d.prepare(
+      `INSERT INTO agentes (id, nome, papel, objetivo, capacidades, instrucoes, nivel_autonomia_padrao)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(
+      crypto.randomUUID(),
+      "Agente de Desenvolvimento",
+      "desenvolvimento",
+      "Inspecionar, verificar e (com aprovação explícita) alterar o próprio código do Jarvis.",
+      JSON.stringify([
+        "listar_arquivos_jarvis",
+        "ler_arquivo_jarvis",
+        "escrever_arquivo_jarvis",
+        "rodar_testes_jarvis",
+        "rodar_typecheck_jarvis",
+        "rodar_build_jarvis",
+        "inspecionar_git_jarvis",
+      ]),
+      "Nunca escreve arquivo sem aprovação explícita (ver escrever_arquivo_jarvis, exigeAprovacaoExplicita). Nunca roda contra outro repositório que não seja o próprio Jarvis.",
+      1,
+    );
+  }
 }
 
 export function id(): string {
