@@ -29,3 +29,8 @@ scripts/projetos.local.json
 # aqui só como rede de segurança pra quem tiver BACKUPS_PATH apontando pra
 # fora de dados/.
 /backups/
+
+# evidência de screenshot do smoke test de navegador (Fase 24) — artefato
+# local de execução, nunca dado versionado (o teste que gera isto continua
+# versionado em testes/browser-fase24.mjs).
+/testes/_evidencia-browser/
