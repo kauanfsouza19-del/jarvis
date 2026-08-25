@@ -23,12 +23,25 @@ const USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
 // nesta fase, ver integracoes/registro.ts) é o escopo mínimo que ainda
 // cobre leitura+criação de evento sem dar acesso a gerenciar o calendário
 // inteiro (criar/apagar calendário, mudar compartilhamento).
+//
+// drive.readonly (Fase 27b — pipeline de criativo): só leitura, nunca
+// escrita/organização no Drive do Cacique — o Jarvis LÊ criativo de uma
+// pasta configurada, nunca cria/move/apaga nada no Drive dele. Pesquisado
+// contra developers.google.com/workspace/drive/api/guides/api-specific-auth
+// em 25/08/2026: drive.readonly é o escopo documentado pra "ver e baixar
+// todos os arquivos do Drive do usuário", sem o superset de escrita de
+// `drive` nem o escopo restrito `drive.file` (que só enxergaria arquivo
+// criado PELO app — errado aqui, o Cacique já tem os criativos na pasta
+// antes do Jarvis existir).
 export const ESCOPOS_GOOGLE = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/drive.readonly",
 ];
+
+export type ProvedorGoogle = "google_gmail" | "google_calendar" | "google_drive";
 
 export function googleConfigurado(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
@@ -139,7 +152,7 @@ function linhaMaisRecente(provedor: string): LinhaIntegracao | undefined {
 }
 
 /** Grava conexão nova (uma linha por provedor — mesmo padrão de histórico já usado em `linhaDb`/registro.ts). */
-export function registrarConexaoGoogle(provedor: "google_gmail" | "google_calendar", token: RespostaToken, email: string | null): void {
+export function registrarConexaoGoogle(provedor: ProvedorGoogle, token: RespostaToken, email: string | null): void {
   const anterior = linhaMaisRecente(provedor);
   const expiraEm = new Date(Date.now() + token.expires_in * 1000).toISOString().replace("T", " ").slice(0, 19);
   db()
@@ -163,7 +176,7 @@ export function registrarConexaoGoogle(provedor: "google_gmail" | "google_calend
     );
 }
 
-export function registrarErroGoogle(provedor: "google_gmail" | "google_calendar", erro: string): void {
+export function registrarErroGoogle(provedor: ProvedorGoogle, erro: string): void {
   db()
     .prepare(`INSERT INTO integracoes (id, provedor, identidade, estado, ultimo_erro) VALUES (?,?,?,?,?)`)
     .run(gerarId(), provedor, null, "ERRO", erro.slice(0, 300));
@@ -174,7 +187,7 @@ export function registrarErroGoogle(provedor: "google_gmail" | "google_calendar"
  * perto de expirar. Retorna null (nunca lança) quando não há conexão real
  * ainda — quem chama trata isso como "não conectado", nunca como bug.
  */
-export async function obterAccessTokenValido(provedor: "google_gmail" | "google_calendar"): Promise<string | null> {
+export async function obterAccessTokenValido(provedor: ProvedorGoogle): Promise<string | null> {
   const linha = linhaMaisRecente(provedor);
   if (!linha?.token_acesso) return null;
 

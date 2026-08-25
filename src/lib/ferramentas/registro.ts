@@ -36,6 +36,34 @@ import {
 } from "./codigo";
 import { listarFerramentasMcp, chamarFerramentaMcp, type FerramentaMcp } from "../mcp/cliente";
 import { obterServidorMcp } from "../mcp/registro";
+import {
+  listarContasAnuncio,
+  listarCampanhas,
+  obterInsightsCampanhas,
+  atualizarStatusCampanha,
+  atualizarOrcamentoDiarioCampanha,
+  criarCampanhaTeste,
+  listarPaginas,
+  type ContaAnuncioMeta,
+  type CampanhaMeta,
+  type InsightCampanhaMeta,
+  type StatusCampanha,
+  type ResultadoMutacaoMeta,
+  type ParametrosCampanhaTeste,
+  type ResultadoCriacaoCampanha,
+  type PaginaMeta,
+} from "./meta-ads";
+import { listarArquivosPasta, type ArquivoDrive } from "../google/drive";
+import {
+  ingerirCriativosDaFonte,
+  enviarCriativoParaMeta,
+  listarCriativos,
+  registrarFonteCriativo,
+  listarFontesCriativo,
+  type ResultadoIngestao,
+  type ResultadoEnvioCriativo,
+} from "./criativos";
+import type { Criativo, FonteCriativo, NovaFonteCriativo } from "../criativos/biblioteca";
 import type { Ferramenta, ResultadoFerramenta } from "./tipos";
 
 /**
@@ -741,6 +769,293 @@ const codigoGitDiff: Ferramenta<{ caminho?: string }, ResultadoComando> = {
   },
 };
 
+/* ── Meta Marketing API (Fase 27) — cliente real, testado à mão contra
+ * conta real (Dra Juliana Klein 2, act_818013916024302) antes de existir
+ * como Tool. Leitura (listar contas/campanhas, insights) nunca exige
+ * aprovação — é só consulta, mesmo padrão de qualquer outra Tool READ.
+ * Mutação (status, orçamento) SEMPRE exige aprovação explícita — dinheiro
+ * real de cliente em jogo, mesma régua de codigo.escrever_arquivo (Fase
+ * 22), nunca decisão automática do modelo sozinho. nivelPermissao
+ * "FINANCIAL" já exigiria aprovação por si só (ver NIVEIS_QUE_EXIGEM_
+ * APROVACAO em ferramentas/tipos.ts); exigeAprovacaoExplicita:true aqui é
+ * redundância deliberada, não acidente — nunca depende de um único
+ * mecanismo pra travar gasto real.
+ */
+
+const metaAdsListarContas: Ferramenta<Record<string, never>, ContaAnuncioMeta[]> = {
+  nome: "meta_ads.listar_contas",
+  descricao: "Lista as contas de anúncio Meta acessíveis pelo token configurado (nome, ID, status, moeda).",
+  capacidade: "listar_contas_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => {
+    try {
+      return { ok: true, saida: await listarContasAnuncio() };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar contas Meta Ads" };
+    }
+  },
+};
+
+const metaAdsListarCampanhas: Ferramenta<{ contaId: string }, CampanhaMeta[]> = {
+  nome: "meta_ads.listar_campanhas",
+  descricao: "Lista as campanhas de uma conta de anúncio Meta (id, nome, status, orçamento). contaId no formato act_XXXXXXXXXXX.",
+  capacidade: "listar_campanhas_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string } => typeof e === "object" && e !== null && typeof (e as { contaId?: unknown }).contaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await listarCampanhas(entrada.contaId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar campanhas" };
+    }
+  },
+};
+
+const metaAdsObterInsights: Ferramenta<{ contaId: string; datePreset?: string }, InsightCampanhaMeta[]> = {
+  nome: "meta_ads.obter_insights",
+  descricao: "Puxa desempenho real por campanha (gasto, CPC, CTR, CPM, CPA/custo por ação, leads) de uma conta Meta Ads. contaId no formato act_XXXXXXXXXXX; datePreset padrão last_30d.",
+  capacidade: "obter_insights_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string; datePreset?: string } => typeof e === "object" && e !== null && typeof (e as { contaId?: unknown }).contaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await obterInsightsCampanhas(entrada.contaId, entrada.datePreset) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao obter insights" };
+    }
+  },
+};
+
+// Mutação real — SEMPRE para em AGUARDANDO_APROVACAO (ver nota da seção acima).
+const metaAdsAtualizarStatusCampanha: Ferramenta<{ campanhaId: string; status: StatusCampanha }, ResultadoMutacaoMeta> = {
+  nome: "meta_ads.atualizar_status_campanha",
+  descricao: "Pausa ou ativa uma campanha Meta Ads real (status ACTIVE ou PAUSED). SEMPRE exige aprovação explícita antes de rodar — gasto real de cliente em jogo.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "FINANCIAL",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { campanhaId: string; status: StatusCampanha } =>
+    typeof e === "object" &&
+    e !== null &&
+    typeof (e as { campanhaId?: unknown }).campanhaId === "string" &&
+    ((e as { status?: unknown }).status === "ACTIVE" || (e as { status?: unknown }).status === "PAUSED"),
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await atualizarStatusCampanha(entrada.campanhaId, entrada.status) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao atualizar status da campanha" };
+    }
+  },
+};
+
+// Mutação real — SEMPRE para em AGUARDANDO_APROVACAO. Valor em CENTAVOS
+// (validação de teto contra erro de ordem de grandeza já em meta-ads.ts).
+const metaAdsAtualizarOrcamento: Ferramenta<{ campanhaId: string; orcamentoDiarioCentavos: number }, ResultadoMutacaoMeta> = {
+  nome: "meta_ads.atualizar_orcamento_campanha",
+  descricao: "Muda o orçamento DIÁRIO de uma campanha Meta Ads real. Valor em CENTAVOS da moeda da conta (R$ 50,00/dia = 5000). SEMPRE exige aprovação explícita antes de rodar.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "FINANCIAL",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { campanhaId: string; orcamentoDiarioCentavos: number } =>
+    typeof e === "object" &&
+    e !== null &&
+    typeof (e as { campanhaId?: unknown }).campanhaId === "string" &&
+    typeof (e as { orcamentoDiarioCentavos?: unknown }).orcamentoDiarioCentavos === "number",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await atualizarOrcamentoDiarioCampanha(entrada.campanhaId, entrada.orcamentoDiarioCentavos) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao atualizar orçamento" };
+    }
+  },
+};
+
+// Mutação real de maior impacto desta esteira — cria objetos novos na conta
+// (sempre PAUSED, nunca gasta sozinha, ver nota em meta-ads.ts). SEMPRE
+// exige aprovação explícita: dois portões humanos antes de qualquer gasto
+// real (este + o de meta_ads.atualizar_status_campanha pra ativar depois).
+const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanhaTeste, ResultadoCriacaoCampanha> = {
+  nome: "meta_ads.criar_campanha_teste",
+  descricao:
+    "Cria uma campanha nova (campanha + conjunto de anúncios + anúncio) numa conta Meta Ads, reaproveitando um criativo/formulário de lead/segmentação já existentes na conta. SEMPRE criada PAUSADA — não gasta sozinha, precisa de uma segunda aprovação (meta_ads.atualizar_status_campanha) pra ativar. SEMPRE exige aprovação explícita.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "FINANCIAL",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is ParametrosCampanhaTeste => {
+    if (typeof e !== "object" || e === null) return false;
+    const x = e as Record<string, unknown>;
+    return (
+      typeof x.contaId === "string" &&
+      typeof x.nomeCampanha === "string" &&
+      typeof x.orcamentoDiarioCentavos === "number" &&
+      typeof x.creativeId === "string" &&
+      typeof x.pageId === "string" &&
+      typeof x.targeting === "object" &&
+      x.targeting !== null
+    );
+  },
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await criarCampanhaTeste(entrada) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao criar campanha" };
+    }
+  },
+};
+
+const metaAdsListarPaginas: Ferramenta<Record<string, never>, PaginaMeta[]> = {
+  nome: "meta_ads.listar_paginas",
+  descricao: "Lista as Páginas do Facebook administradas pelo token configurado, com a conta do Instagram vinculada quando existir.",
+  capacidade: "listar_paginas_meta",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => {
+    try {
+      return { ok: true, saida: await listarPaginas() };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar páginas" };
+    }
+  },
+};
+
+/* ── Google Drive (Fase 27b) — só leitura, allowlist de pasta nunca livre ──
+ * `folderId` sempre vem de uma Fonte de Criativo registrada OU de um ID
+ * que o Cacique forneceu explicitamente — nunca varredura livre do Drive
+ * inteiro (mesmo princípio de mcp/registro.ts: quem chama pede por algo
+ * conhecido, nunca deixa o modelo decidir o que acessar).
+ */
+
+const driveListarArquivosPasta: Ferramenta<{ folderId: string }, ArquivoDrive[]> = {
+  nome: "drive.listar_criativos_pasta",
+  descricao: "Lista imagens/vídeos de uma pasta do Google Drive (ID da pasta), com metadado real (dimensões, duração, checksum).",
+  capacidade: "listar_criativos_drive",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "GOOGLE_CLIENT_ID",
+  validarEntrada: (e): e is { folderId: string } => typeof e === "object" && e !== null && typeof (e as { folderId?: unknown }).folderId === "string",
+  executar: async (entrada) => {
+    const r = await listarArquivosPasta(entrada.folderId);
+    return r.ok ? { ok: true, saida: r.dados } : { ok: false, erro: r.erro };
+  },
+};
+
+/* ── Biblioteca de Criativos + pipeline Drive→Meta (Fase 27b) ──
+ * Ingestão (Drive → staging → Biblioteca) nunca exige aprovação — só
+ * escreve no PRÓPRIO staging/banco do Jarvis, reversível, sem efeito em
+ * conta de cliente nenhuma (mesma régua de codigo.rodar_testes). Envio
+ * pro Meta CRIA ativo real e persistente na conta do cliente — mutação
+ * ("Uploading creative: MUTATING", classificação pedida na Fase 27b) —
+ * sempre aprovação explícita. Registrar Fonte de Criativo (o mapeamento
+ * Cliente↔Pasta↔Conta) também exige aprovação: é exatamente o ponto onde
+ * um erro de configuração causaria contaminação cross-client (Fase 27b,
+ * seção 13) — nunca aceito sem revisão humana.
+ */
+
+const criativosListar: Ferramenta<{ status?: string; contaMetaId?: string; cliente?: string }, Criativo[]> = {
+  nome: "criativos.listar",
+  descricao: "Lista criativos já conhecidos pela Biblioteca (filtro opcional por status/conta/cliente).",
+  capacidade: "listar_criativos",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is { status?: string; contaMetaId?: string; cliente?: string } => typeof e === "object" && e !== null,
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: listarCriativos({ status: entrada.status as never, contaMetaId: entrada.contaMetaId, cliente: entrada.cliente }) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao listar criativos" };
+    }
+  },
+};
+
+const criativosListarFontes: Ferramenta<Record<string, never>, FonteCriativo[]> = {
+  nome: "criativos.listar_fontes",
+  descricao: "Lista as Fontes de Criativo configuradas (pasta do Drive ↔ cliente ↔ conta Meta).",
+  capacidade: "listar_fontes_criativo",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => ({ ok: true, saida: listarFontesCriativo(false) }),
+};
+
+const criativosRegistrarFonte: Ferramenta<NovaFonteCriativo, FonteCriativo> = {
+  nome: "criativos.registrar_fonte",
+  descricao:
+    "Registra uma Fonte de Criativo — a relação Cliente ↔ pasta do Google Drive ↔ conta de anúncio Meta de destino. SEMPRE exige aprovação explícita: erro aqui pode misturar criativo de um cliente na conta de outro.",
+  capacidade: "gerenciar_fontes_criativo",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  validarEntrada: (e): e is NovaFonteCriativo => {
+    if (typeof e !== "object" || e === null) return false;
+    const x = e as Record<string, unknown>;
+    return typeof x.nome === "string" && typeof x.driveFolderId === "string" && typeof x.cliente === "string" && typeof x.contaMetaId === "string";
+  },
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: registrarFonteCriativo(entrada) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao registrar fonte" };
+    }
+  },
+};
+
+const criativosIngerirDaFonte: Ferramenta<{ fonteId: string }, ResultadoIngestao> = {
+  nome: "criativos.ingerir_da_fonte",
+  descricao: "Verifica a pasta do Drive de uma Fonte de Criativo, baixa arquivos novos (dedup real) e grava na Biblioteca local. Nunca toca o Meta.",
+  capacidade: "ingerir_criativos",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: false, // só escreve staging/banco PRÓPRIO do Jarvis — nunca conta de cliente
+  implementado: true,
+  credencialNecessaria: "GOOGLE_CLIENT_ID",
+  validarEntrada: (e): e is { fonteId: string } => typeof e === "object" && e !== null && typeof (e as { fonteId?: unknown }).fonteId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await ingerirCriativosDaFonte(entrada.fonteId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao ingerir criativos" };
+    }
+  },
+};
+
+const metaAdsEnviarCriativo: Ferramenta<{ criativoId: string }, ResultadoEnvioCriativo> = {
+  nome: "meta_ads.enviar_criativo",
+  descricao: "Envia um criativo já baixado (staging local) pro Media Library da conta Meta configurada na sua Fonte. Cria ativo real e persistente na conta do cliente. SEMPRE exige aprovação explícita.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { criativoId: string } => typeof e === "object" && e !== null && typeof (e as { criativoId?: unknown }).criativoId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await enviarCriativoParaMeta(entrada.criativoId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao enviar criativo" };
+    }
+  },
+};
+
 /* ── MCP (Fase 26) — cliente real, testado contra servidor de referência ──
  * `servidorId` é sempre um ID do allowlist (mcp/registro.ts), NUNCA
  * comando/args aceitos direto de entrada — a mesma disciplina de
@@ -831,8 +1146,20 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   codigoGitDiff as unknown as Ferramenta,
   mcpListarFerramentas as unknown as Ferramenta,
   mcpChamarFerramenta as unknown as Ferramenta,
+  metaAdsListarContas as unknown as Ferramenta,
+  metaAdsListarCampanhas as unknown as Ferramenta,
+  metaAdsObterInsights as unknown as Ferramenta,
+  metaAdsAtualizarStatusCampanha as unknown as Ferramenta,
+  metaAdsAtualizarOrcamento as unknown as Ferramenta,
+  metaAdsCriarCampanhaTeste as unknown as Ferramenta,
+  metaAdsListarPaginas as unknown as Ferramenta,
+  driveListarArquivosPasta as unknown as Ferramenta,
+  criativosListar as unknown as Ferramenta,
+  criativosListarFontes as unknown as Ferramenta,
+  criativosRegistrarFonte as unknown as Ferramenta,
+  criativosIngerirDaFonte as unknown as Ferramenta,
+  metaAdsEnviarCriativo as unknown as Ferramenta,
   stub("whatsapp.enviar", "Envia mensagem de WhatsApp em nome do Cacique.", "enviar_mensagem_whatsapp", "EXTERNAL_COMMUNICATION", true, "EVOLUTION_API_URL"),
-  stub("meta_ads.analisar", "Lê campanhas de uma conta Meta Ads autorizada.", "analisar_meta_ads", "READ", false),
   stub("google_ads.analisar", "Lê campanhas de uma conta Google Ads autorizada.", "analisar_google_ads", "READ", false),
   stub("google_ads.negativar", "Adiciona palavra negativa a uma campanha.", "negativar_google_ads", "WRITE", true),
   stub("imagem.gerar", "Gera imagem via provedor externo.", "gerar_imagem", "WRITE", false),

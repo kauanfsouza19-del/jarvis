@@ -166,6 +166,32 @@ export function listarIntegracoes(origem = "http://localhost:3000"): ItemIntegra
     ultimoErro: calendar?.ultimo_erro ?? null,
   });
 
+  // Google Drive (Fase 27b — pipeline de criativo) — MESMA credencial OAuth
+  // acima (escopo drive.readonly já incluído em ESCOPOS_GOOGLE), nunca um
+  // fluxo de conexão separado. Reaproveita `google/callback` — conectar
+  // Gmail/Calendar UMA vez já conecta Drive também a partir desta fase.
+  const drive = linhaDb("google_drive");
+  itens.push({
+    id: "google_drive",
+    nome: "Google Drive (criativos)",
+    estado: process.env.GOOGLE_CLIENT_ID
+      ? ((drive?.estado as EstadoIntegracao) ?? "AUTH_NECESSARIA")
+      : "NAO_CONFIGURADO",
+    identidade: drive?.identidade ?? null,
+    ultimaSincronizacao: drive?.ultima_sincronizacao ?? null,
+    ultimoErro: drive?.ultimo_erro ?? null,
+    onboarding: process.env.GOOGLE_CLIENT_ID
+      ? undefined
+      : {
+          servico: "Google Drive — leitura de pasta de criativos",
+          porque: "Pipeline Drive → Jarvis → Meta Ads precisa listar e baixar arquivo de uma pasta configurada.",
+          ondeCriar: "console.cloud.google.com → APIs & Services → Library → ative 'Google Drive API' no MESMO projeto já usado por Gmail/Calendar",
+          permissoes: ["drive.readonly (já incluso no mesmo consent de Gmail/Calendar)"],
+          ondeColocar: `Mesmas GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET de Gmail/Calendar — nenhuma credencial nova. Redirect URI: ${origem}/api/integracoes/google/callback`,
+          comoTestar: `Abra ${origem}/api/integracoes/google/conectar no navegador (logado) — o mesmo consent agora inclui Drive.`,
+        },
+  });
+
   // Google Places — descoberta de prospect.
   itens.push({
     id: "google_places",

@@ -724,6 +724,66 @@ function migrar(d: DatabaseSync) {
       1,
     );
   }
+
+  // Biblioteca de Criativos (Fase 27b — pipeline Drive → Meta). Metadado
+  // apenas — NUNCA o binário em si (achado deliberado: um vault de vídeo
+  // dentro do SQLite explodiria o tamanho do banco e do backup à toa;
+  // `caminho_local` aponta pro staging em disco — ver criativos/
+  // armazenamento.ts —, sempre fora do controle de versão, sempre com
+  // limite de retenção). `drive_file_id` com índice único (quando não
+  // nulo) é a proteção real contra reprocessar o mesmo arquivo do Drive
+  // duas vezes — nunca confiar só em nome de arquivo (Fase 27b pede
+  // detecção de duplicata explicitamente).
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS criativos (
+      id                 TEXT PRIMARY KEY,
+      origem             TEXT NOT NULL,
+      drive_file_id      TEXT,
+      drive_folder_id    TEXT,
+      nome_arquivo       TEXT NOT NULL,
+      mime_type          TEXT NOT NULL,
+      tipo               TEXT NOT NULL,
+      largura            INTEGER,
+      altura             INTEGER,
+      duracao_segundos   REAL,
+      tamanho_bytes      INTEGER,
+      checksum_sha256    TEXT,
+      caminho_local      TEXT,
+      conta_meta_id      TEXT,
+      cliente            TEXT,
+      campanha_alvo      TEXT,
+      versao             INTEGER NOT NULL DEFAULT 1,
+      status             TEXT NOT NULL DEFAULT 'NOVO',
+      meta_creative_hash TEXT,
+      meta_video_id      TEXT,
+      meta_ad_id         TEXT,
+      erro               TEXT,
+      criado_em          TEXT NOT NULL DEFAULT (datetime('now')),
+      atualizado_em      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  d.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_criativos_drive_file_id ON criativos(drive_file_id) WHERE drive_file_id IS NOT NULL");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_criativos_status ON criativos(status, criado_em DESC)");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_criativos_conta ON criativos(conta_meta_id, criado_em DESC)");
+
+  // Fontes de Criativo (Fase 27b, seção 8 — "Creative Folder Automation")
+  // — a relação declarada Cliente↔Pasta do Drive↔Conta/Campanha Meta.
+  // JARVIS nunca decide essa relação sozinho: uma linha aqui é sempre
+  // configuração explícita do Cacique, nunca inferida de nome de pasta.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS fontes_criativo (
+      id                       TEXT PRIMARY KEY,
+      nome                     TEXT NOT NULL,
+      drive_folder_id          TEXT NOT NULL,
+      cliente                  TEXT NOT NULL,
+      conta_meta_id            TEXT NOT NULL,
+      campanha_alvo_padrao     TEXT,
+      ad_set_alvo_padrao       TEXT,
+      padrao_nomenclatura      TEXT,
+      habilitada               INTEGER NOT NULL DEFAULT 1,
+      criado_em                TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 }
 
 export function id(): string {

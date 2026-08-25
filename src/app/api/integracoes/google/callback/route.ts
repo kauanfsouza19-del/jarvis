@@ -27,15 +27,18 @@ export async function GET(req: Request) {
   if (!resultado.ok) {
     registrarErroGoogle("google_gmail", resultado.erro);
     registrarErroGoogle("google_calendar", resultado.erro);
+    registrarErroGoogle("google_drive", resultado.erro);
     return redirecionarComResultado("erro", resultado.erro);
   }
 
   const email = await obterEmailConta(resultado.token.access_token);
-  // Mesmo token serve as duas capacidades (Gmail + Calendar) — grava nas
-  // duas linhas de integração porque /api/integracoes já lê cada uma
-  // separadamente (ver integracoes/registro.ts).
+  // Mesmo token serve três capacidades agora (Gmail + Calendar + Drive,
+  // Fase 27b) — grava nas três linhas de integração porque
+  // /api/integracoes já lê cada uma separadamente (ver
+  // integracoes/registro.ts).
   registrarConexaoGoogle("google_gmail", resultado.token, email);
   registrarConexaoGoogle("google_calendar", resultado.token, email);
+  registrarConexaoGoogle("google_drive", resultado.token, email);
 
   return redirecionarComResultado("conectado");
 }
