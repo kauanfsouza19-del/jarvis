@@ -45,6 +45,8 @@ import {
   criarCampanha,
   listarPaginas,
   listarPixels,
+  obterModeloCampanha,
+  criarCampanhaSimilar,
   type ContaAnuncioMeta,
   type CampanhaMeta,
   type InsightCampanhaMeta,
@@ -54,6 +56,7 @@ import {
   type ResultadoCriacaoCampanha,
   type PaginaMeta,
   type PixelMeta,
+  type ModeloCampanha,
 } from "./meta-ads";
 import { analisarCampanhas, THRESHOLDS_PADRAO, type ResultadoAnaliseOtimizacao, type ThresholdsOtimizacao } from "./meta-otimizacao";
 import { analisarContaMeta, analisarTodasContasMeta, type ResultadoAnaliseConta, type ResultadoAnaliseMultiConta } from "./meta-analise-conta";
@@ -931,6 +934,55 @@ const metaAdsCriarCampanhaTeste: Ferramenta<ParametrosCampanha, ResultadoCriacao
   },
 };
 
+// Fase 28c — nunca deixa o modelo inventar targeting/página/criativo:
+// extrai isso de uma campanha REAL já existente na conta. READ, nunca
+// exige aprovação (não muta nada).
+const metaAdsObterModeloCampanha: Ferramenta<{ contaId: string; campanhaModeloId?: string }, ModeloCampanha> = {
+  nome: "meta_ads.obter_modelo_campanha",
+  descricao:
+    "Busca uma campanha real já existente numa conta Meta Ads (a indicada, ou a primeira ativa) e extrai os parâmetros técnicos reais dela (segmentação, Página, Instagram, criativo, formulário de lead) — usar isso ANTES de criar campanha nova pra nunca inventar esses valores.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string; campanhaModeloId?: string } => typeof e === "object" && e !== null && typeof (e as { contaId?: unknown }).contaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await obterModeloCampanha(entrada.contaId, entrada.campanhaModeloId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao obter modelo de campanha" };
+    }
+  },
+};
+
+// Fase 28c — composição atômica: obtém o modelo real + cria a campanha
+// nova numa SÓ chamada (evita o limite de encadeamento passo-a-passo do
+// motor de Plano, mesmo motivo de meta_ads.analisar_conta). SEMPRE
+// PAUSED, SEMPRE aprovação explícita — cria objeto real na conta.
+const metaAdsCriarCampanhaSimilar: Ferramenta<{ contaId: string; nomeCampanha: string; orcamentoDiarioCentavos: number; campanhaModeloId?: string }, ResultadoCriacaoCampanha & { modeloUsado: string }> = {
+  nome: "meta_ads.criar_campanha_similar",
+  descricao:
+    "Cria uma campanha nova reaproveitando os parâmetros reais (segmentação/página/criativo) de uma campanha já existente na mesma conta — só orçamento e nome são novos. Use quando o Cacique pedir pra criar campanha sem especificar segmentação/criativo do zero (o caso comum: 'cria uma campanha de X pra conta Y com R$Z/dia'). SEMPRE criada PAUSADA. SEMPRE exige aprovação explícita.",
+  capacidade: "otimizar_meta_ads",
+  nivelPermissao: "FINANCIAL",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string; nomeCampanha: string; orcamentoDiarioCentavos: number; campanhaModeloId?: string } => {
+    if (typeof e !== "object" || e === null) return false;
+    const x = e as Record<string, unknown>;
+    return typeof x.contaId === "string" && typeof x.nomeCampanha === "string" && typeof x.orcamentoDiarioCentavos === "number";
+  },
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await criarCampanhaSimilar(entrada.contaId, entrada.nomeCampanha, entrada.orcamentoDiarioCentavos, entrada.campanhaModeloId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao criar campanha similar" };
+    }
+  },
+};
+
 const metaAdsListarPaginas: Ferramenta<Record<string, never>, PaginaMeta[]> = {
   nome: "meta_ads.listar_paginas",
   descricao: "Lista as Páginas do Facebook administradas pelo token configurado, com a conta do Instagram vinculada quando existir.",
@@ -1345,6 +1397,8 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   metaAdsAtualizarStatusCampanha as unknown as Ferramenta,
   metaAdsAtualizarOrcamento as unknown as Ferramenta,
   metaAdsCriarCampanhaTeste as unknown as Ferramenta,
+  metaAdsObterModeloCampanha as unknown as Ferramenta,
+  metaAdsCriarCampanhaSimilar as unknown as Ferramenta,
   metaAdsListarPaginas as unknown as Ferramenta,
   metaAdsListarPixels as unknown as Ferramenta,
   metaAdsAnalisarCampanhas as unknown as Ferramenta,

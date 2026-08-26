@@ -452,3 +452,125 @@ export async function criarCampanha(p: ParametrosCampanha): Promise<ResultadoCri
 
   return { campanhaId: campanha.id, conjuntoAnuncioId: conjunto.id, anuncioId: anuncio.id, status: "PAUSED" };
 }
+
+// ── Modelo de campanha real (Fase 28c) ──
+// O modelo NUNCA deveria inventar targeting/pageId/creativeId — são dados
+// que só existem na conta real. Esta função busca uma campanha REAL já
+// existente na conta (ativa, ou uma específica pedida) e extrai os
+// parâmetros técnicos dela (segmentação, página, criativo, formulário de
+// lead se houver) pra reaproveitar numa campanha nova — exatamente o que
+// foi feito à mão pra criar a primeira campanha de teste da Klein
+// (Fase 27), agora reutilizável por qualquer conta/cliente sem repetir
+// a pesquisa manual.
+
+export type ModeloCampanha = {
+  campanhaOrigemId: string;
+  campanhaOrigemNome: string;
+  objective: string;
+  bidStrategy?: string;
+  pageId: string;
+  instagramUserId?: string;
+  creativeId: string;
+  targeting: Record<string, unknown>;
+  optimizationGoal: string;
+  billingEvent: string;
+  destinationType?: string;
+  leadGenFormId?: string;
+};
+
+type CampanhaResumo = { id: string; name: string; objective: string; bid_strategy?: string; status: string };
+type AdSetDetalhe = {
+  id: string;
+  targeting?: Record<string, unknown>;
+  optimization_goal?: string;
+  billing_event?: string;
+  destination_type?: string;
+  promoted_object?: { page_id?: string };
+};
+type CriativoDetalhe = {
+  id: string;
+  object_story_spec?: {
+    page_id?: string;
+    instagram_user_id?: string;
+    video_data?: { call_to_action?: { value?: { lead_gen_form_id?: string } } };
+  };
+};
+type AdDetalhe = { id: string; creative?: CriativoDetalhe };
+
+/**
+ * Busca uma campanha real da conta (a indicada em `campanhaModeloId`, ou
+ * a primeira ATIVA da conta) e extrai os parâmetros reais do primeiro
+ * conjunto de anúncios + primeiro anúncio dela — segmentação, página,
+ * Instagram, criativo, formulário de lead (se o criativo usar um). Nunca
+ * inventa um valor que não veio da API real.
+ */
+export async function obterModeloCampanha(contaId: string, campanhaModeloId?: string): Promise<ModeloCampanha> {
+  validarContaId(contaId);
+
+  let campanha: CampanhaResumo;
+  if (campanhaModeloId) {
+    campanha = await chamarGraph<CampanhaResumo>(`/${campanhaModeloId}?fields=id,name,objective,bid_strategy,status`);
+  } else {
+    const r = await chamarGraph<{ data: CampanhaResumo[] }>(`/${contaId}/campaigns?fields=id,name,objective,bid_strategy,status&limit=50`);
+    const escolhida = r.data.find((c) => c.status === "ACTIVE") ?? r.data[0];
+    if (!escolhida) throw new Error(`nenhuma campanha encontrada na conta ${contaId} pra usar como modelo`);
+    campanha = escolhida;
+  }
+
+  const adsets = await chamarGraph<{ data: AdSetDetalhe[] }>(`/${campanha.id}/adsets?fields=id,targeting,optimization_goal,billing_event,destination_type,promoted_object&limit=5`);
+  const adset = adsets.data[0];
+  if (!adset) throw new Error(`campanha "${campanha.name}" (${campanha.id}) não tem conjunto de anúncios pra usar como modelo`);
+
+  const ads = await chamarGraph<{ data: AdDetalhe[] }>(`/${adset.id}/ads?fields=id,creative{id,object_story_spec}&limit=1`);
+  const criativo = ads.data[0]?.creative;
+  if (!criativo) throw new Error(`conjunto de anúncios "${adset.id}" não tem anúncio/criativo pra usar como modelo`);
+
+  const pageId = adset.promoted_object?.page_id ?? criativo.object_story_spec?.page_id;
+  if (!pageId) throw new Error(`não foi possível determinar a Página (page_id) a partir da campanha "${campanha.name}"`);
+
+  return {
+    campanhaOrigemId: campanha.id,
+    campanhaOrigemNome: campanha.name,
+    objective: campanha.objective,
+    bidStrategy: campanha.bid_strategy,
+    pageId,
+    instagramUserId: criativo.object_story_spec?.instagram_user_id,
+    creativeId: criativo.id,
+    targeting: adset.targeting ?? {},
+    optimizationGoal: adset.optimization_goal ?? "",
+    billingEvent: adset.billing_event ?? "",
+    destinationType: adset.destination_type,
+    leadGenFormId: criativo.object_story_spec?.video_data?.call_to_action?.value?.lead_gen_form_id,
+  };
+}
+
+/**
+ * Composição atômica (mesmo princípio de meta-analise-conta.ts): busca o
+ * modelo real de uma campanha existente e cria a campanha nova reaproveitando
+ * esses parâmetros, numa SÓ chamada — nunca depende do motor de Plano
+ * encadear a saída de um passo pro input do próximo (limite real
+ * documentado na Fase 27j). Isto é o que faz "cria uma campanha de
+ * formulário pra Klein com R$30/dia" funcionar sem o modelo ter que
+ * inventar segmentação/página/criativo — só orçamento e nome são
+ * genuinamente novos, o resto vem de uma campanha real da própria conta.
+ * SEMPRE cria PAUSED (herdado de criarCampanha).
+ */
+export async function criarCampanhaSimilar(contaId: string, nomeCampanha: string, orcamentoDiarioCentavos: number, campanhaModeloId?: string): Promise<ResultadoCriacaoCampanha & { modeloUsado: string }> {
+  const modelo = await obterModeloCampanha(contaId, campanhaModeloId);
+  const objetivoValido = OBJETIVOS_META_VALIDOS.includes(modelo.objective as ObjetivoMeta) ? (modelo.objective as ObjetivoMeta) : "OUTCOME_LEADS";
+  const resultado = await criarCampanha({
+    contaId,
+    nomeCampanha,
+    orcamentoDiarioCentavos,
+    creativeId: modelo.creativeId,
+    pageId: modelo.pageId,
+    targeting: modelo.targeting,
+    objective: objetivoValido,
+    optimizationGoal: modelo.optimizationGoal || undefined,
+    billingEvent: modelo.billingEvent || undefined,
+    bidStrategy: modelo.bidStrategy,
+    destinationType: modelo.destinationType,
+    promotedObject: { page_id: modelo.pageId },
+  });
+  return { ...resultado, modeloUsado: `${modelo.campanhaOrigemNome} (${modelo.campanhaOrigemId})` };
+}
