@@ -60,10 +60,26 @@ export async function POST(req: Request) {
   // PERSISTIDO (adicionarMensagem abaixo usa `mensagem` puro) — só ao
   // objetivo que o Orquestrador/planejador recebe.
   const contextoMeta = obterContextoMetaDaConversa(corpo.conversa_id);
+  // Achado real (Fase 27j, testando "abre a conta da Klein" -> "quais
+  // campanhas essa conta tem?" em produção): a primeira redação deste
+  // prefixo dizia "conta Meta Ads selecionada" — e esse texto vai direto
+  // pro `objetivo` que orquestrar()/planejar() passa pros detectores
+  // determinísticos ANTES do modelo (ver interpretador.ts,
+  // GATILHO_MARKETING = /meta\s+ads|anúnci.../). O PRÓPRIO texto de
+  // contexto que eu injetei virou gatilho e sequestrou o roteamento pra
+  // "análise de marketing derivada" (pensado pra outra coisa, sempre
+  // falhando por "sem resultado anterior"). Nunca usar no objetivo
+  // palavra que colide com os gatilhos determinísticos existentes
+  // (anúnci/meta ads/pixel/tráfego pago/publicidade/marketing digital/
+  // abordagem/enriquec/pontu) — "id de referência" é informação
+  // suficiente pro modelo sem tropeçar em nenhum desses.
+  const prefixoContextoMetaObjetivo = contextoMeta
+    ? `[Cliente ativo nesta conversa: ${contextoMeta.clienteNome ?? "(sem nome)"}, id de referência ${contextoMeta.contaMetaId} — use este id como contaId quando a pergunta não indicar outro cliente/conta explicitamente.]\n\n`
+    : "";
   const prefixoContextoMeta = contextoMeta
     ? `[Contexto ativo nesta conversa: conta Meta Ads selecionada é ${contextoMeta.clienteNome ?? contextoMeta.contaMetaId} (ID real: ${contextoMeta.contaMetaId}) — use esta conta quando a pergunta não especificar outra explicitamente.]\n\n`
     : "";
-  const mensagemComContexto = prefixoContextoMeta + mensagem;
+  const mensagemComContexto = prefixoContextoMetaObjetivo + mensagem;
 
   // Override explícito (clique no chip) vence a inferência, mas não apaga o
   // resto do que foi resolvido — só substitui o projeto.
