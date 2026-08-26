@@ -238,9 +238,12 @@ export async function POST(req: Request) {
   ) {
     const orquestrado = await orquestrar(corpo.conversa_id, mensagemComContexto, resolvido);
     if (orquestrado) {
+      // Fase 29c — achado real (print do Cacique): "Plano pronto (nível de
+      // autonomia em 'só sugerir'...)" ia direto pro chat como se fosse
+      // fala natural — jargão interno exposto sem tradução nenhuma.
       const texto = orquestrado.jobId
-        ? `Entendi. ${orquestrado.resumoRaciocinio}`
-        : `Plano pronto (nível de autonomia em "só sugerir" — nada foi executado ainda). ${orquestrado.resumoRaciocinio}`;
+        ? orquestrado.resumoRaciocinio
+        : `${orquestrado.resumoRaciocinio} Quer que eu já execute, ou prefere só isso por enquanto?`;
       return respostaLocal(texto, orquestrado.jobId ? "executando_tarefa" : "plano_sugerido", {
         execucaoId: orquestrado.jobId ?? undefined,
         planoId: orquestrado.planoId,
