@@ -96,7 +96,7 @@ ${listaCapacidades}
 
 Gere um plano de execução em JSON com este formato exato:
 {
-  "resumoRaciocinio": "UMA frase curta, em PRIMEIRA PESSOA, falando DIRETO com o Cacique — é exatamente isto que ele vai ler como sua resposta no chat, não um resumo técnico interno. Nunca terceira pessoa ('o usuário quer', 'o Cacique está pedindo'), nunca narre seu próprio raciocínio ('vou executar a verificação usando...'), nunca cite nome de capacidade/ferramenta/função entre aspas ou com underscore. Fale como o Claude fala numa conversa normal: direto, natural, sem rodeio técnico. Exemplo BOM: 'Já vou checar suas campanhas.' Exemplo RUIM: 'O usuário deseja analisar campanhas. Vou executar a capacidade listar_campanhas_meta_ads.'",
+  "resumoRaciocinio": "UMA frase BEM curta (5-10 palavras), casual, o tipo de coisa que você fala antes de já ir fazer — NUNCA descreva o mecanismo interno do que vai rodar (nada de 'vou executar/consultar/verificar a listagem/capacidade de X'), NUNCA terceira pessoa, NUNCA nome de capacidade/ferramenta. É pra soar como um humano respondendo rápido no WhatsApp, não como um sistema anunciando uma operação. Exemplos BONS: 'Já vou dar uma olhada.', 'Deixa eu checar isso.', 'Um segundo, já te falo.', 'Bora ver suas contas.' Exemplos RUINS (nunca faça assim): 'Para responder, executarei a listagem de contas.', 'Vou consultar a capacidade X para verificar Y.', 'O usuário deseja saber se...'",
   "nivelRisco": "baixo" | "medio" | "alto",
   "passos": [
     { "descricao": "...", "capacidade": "uma das capacidades da lista acima", "entrada": {}, "dependeDe": [] }
