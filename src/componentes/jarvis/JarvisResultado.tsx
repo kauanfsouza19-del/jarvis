@@ -123,13 +123,16 @@ function ehResumoFerramenta(r: unknown): r is ResumoFerramentaUnica {
 }
 
 function CardGenerico({ dados }: { dados: DadosResultado }) {
-  const [detalheAberto, setDetalheAberto] = useState<number | null>(null);
-  let resumo: unknown;
+  let resumoInicial: unknown;
   try {
-    resumo = JSON.parse(dados.resultado.resumo);
+    resumoInicial = JSON.parse(dados.resultado.resumo);
   } catch {
-    resumo = null;
+    resumoInicial = null;
   }
+  // Passo único (o caso mais comum: uma pergunta -> um passo) já abre
+  // direto — nunca faz o Cacique clicar pra ver o único resultado que existe.
+  const [detalheAberto, setDetalheAberto] = useState<number | null>(ehResumoPlano(resumoInicial) && resumoInicial.passos.length === 1 ? 0 : null);
+  const resumo = resumoInicial;
 
   const rotulo = ehResumoPlano(resumo) ? "PLANO CONCLUÍDO" : ehResumoFerramenta(resumo) ? "FERRAMENTA EXECUTADA" : "RESULTADO";
 
@@ -192,26 +195,132 @@ function Pill({ status }: { status: string }) {
   );
 }
 
-/** Prévia legível do `saida` de uma Tool — lista de objetos vira tabela compacta (nome/campo principal + contagem); qualquer outra coisa cai no JSON formatado, sempre dentro de uma caixa com rolagem (nunca estoura a largura do card). */
+// ── Achados do motor de otimização (Fase 28) — meta_ads.analisar_conta /
+// analisar_todas_contas SEMPRE devem virar isto, nunca o dump de JSON
+// cru abaixo. É literalmente a entrega principal desta fase (achado
+// real: sem isto, "analisa a conta X" mostrava um bloco de JSON gigante
+// pro Cacique, exatamente o comportamento que ele apontou como
+// inaceitável).
+type Achado = { campanhaNome: string; categoria: string; severidade: "OBSERVACAO" | "RECOMENDACAO" | "CRITICO"; explicacao: string; acaoSugerida: string | null };
+type ResumoAnalise = { totalGasto: number; totalLeads: number; cpaMedioBlended: number | null; campanhasAnalisadas: number };
+type AnaliseConta = { contaId: string; nomeConta: string | null; analise: { achados: Achado[]; resumo: ResumoAnalise } };
+type AnaliseMultiConta = { contasAnalisadas: number; contasComErro: Array<{ nome: string; erro: string }>; resultados: Array<{ contaId: string; nome: string; analise: { achados: Achado[]; resumo: ResumoAnalise } }> };
+
+function ehAnaliseConta(r: unknown): r is AnaliseConta {
+  return typeof r === "object" && r !== null && typeof (r as { analise?: { achados?: unknown } }).analise?.achados !== "undefined" && Array.isArray((r as { analise: { achados: unknown } }).analise.achados);
+}
+function ehAnaliseMultiConta(r: unknown): r is AnaliseMultiConta {
+  return typeof r === "object" && r !== null && Array.isArray((r as { resultados?: unknown }).resultados) && typeof (r as { ordemPrioridade?: unknown }).ordemPrioridade !== "undefined";
+}
+
+const COR_SEVERIDADE: Record<Achado["severidade"], string> = { CRITICO: "var(--risco)", RECOMENDACAO: "var(--atencao)", OBSERVACAO: "var(--color-tinta-fraca)" };
+
+function moeda(v: number): string {
+  return `R$ ${v.toFixed(2).replace(".", ",")}`;
+}
+
+function ListaAchados({ achados }: { achados: Achado[] }) {
+  if (achados.length === 0) return <p className="text-[11px] text-[var(--color-tinta-fraca)]">Nenhum achado — conta dentro dos parâmetros normais.</p>;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {achados.map((a, i) => (
+        <div key={i} className="border-l-2 py-1 pl-2" style={{ borderColor: COR_SEVERIDADE[a.severidade] }}>
+          <div className="flex items-center gap-1.5">
+            <span className="mono text-[8.5px] tracking-[0.08em]" style={{ color: COR_SEVERIDADE[a.severidade] }}>
+              {a.severidade}
+            </span>
+            <span className="text-[11px] font-medium text-[var(--color-tinta)]">{a.campanhaNome}</span>
+          </div>
+          <p className="text-[11px] leading-snug text-[var(--color-tinta-media)]">{a.explicacao}</p>
+          {a.acaoSugerida && <p className="text-[10.5px] italic text-[var(--color-tinta-fraca)]">{a.acaoSugerida}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CardAnaliseConta({ dado }: { dado: AnaliseConta }) {
+  const r = dado.analise.resumo;
+  return (
+    <div>
+      <div className="mb-3 grid grid-cols-4 gap-2">
+        <MiniMedida rotulo="GASTO" valor={Math.round(r.totalGasto)} />
+        <MiniMedida rotulo="LEADS" valor={r.totalLeads} cor="var(--ok)" />
+        <MiniMedida rotulo="CPA MÉDIO" valor={r.cpaMedioBlended ? Math.round(r.cpaMedioBlended) : 0} />
+        <MiniMedida rotulo="ACHADOS" valor={dado.analise.achados.length} cor={dado.analise.achados.some((a) => a.severidade === "CRITICO") ? "var(--risco)" : undefined} />
+      </div>
+      <ListaAchados achados={dado.analise.achados} />
+    </div>
+  );
+}
+
+function CardAnaliseMultiConta({ dado }: { dado: AnaliseMultiConta }) {
+  const [contaAberta, setContaAberta] = useState<number | null>(0);
+  return (
+    <div>
+      <p className="mono mb-2 text-[10px] text-[var(--color-tinta-fraca)]">
+        {dado.contasAnalisadas} conta(s) analisada(s){dado.contasComErro.length > 0 ? ` · ${dado.contasComErro.length} com erro` : ""}
+      </p>
+      <div className="flex flex-col gap-1">
+        {dado.resultados.map((c, i) => {
+          const criticos = c.analise.achados.filter((a) => a.severidade === "CRITICO").length;
+          return (
+            <div key={i} className="border border-[var(--color-linha)]">
+              <button onClick={() => setContaAberta(contaAberta === i ? null : i)} className="flex w-full items-center justify-between gap-2 p-2 text-left">
+                <span className="text-[11.5px] text-[var(--color-tinta)]">{c.nome}</span>
+                <span className="mono text-[9px]" style={{ color: criticos > 0 ? "var(--risco)" : "var(--color-tinta-fraca)" }}>
+                  {criticos > 0 ? `${criticos} CRÍTICO(S)` : "OK"}
+                </span>
+              </button>
+              {contaAberta === i && (
+                <div className="border-t border-[var(--color-linha-fraca)] p-2">
+                  <p className="mono mb-1 text-[9px] text-[var(--color-tinta-fraca)]">
+                    {moeda(c.analise.resumo.totalGasto)} · {c.analise.resumo.totalLeads} leads
+                  </p>
+                  <ListaAchados achados={c.analise.achados} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Prévia legível do `saida` de uma Tool — achados de análise viram lista visual; lista de objetos vira tabela compacta (nome + status quando existir); qualquer outra coisa cai no JSON formatado, sempre dentro de uma caixa com rolagem (nunca estoura a largura do card). */
 function SaidaPreview({ saida }: { saida: unknown }) {
   if (saida === undefined || saida === null) {
     return <p className="text-[11px] text-[var(--color-tinta-fraca)]">sem dado de retorno.</p>;
   }
 
+  if (ehAnaliseMultiConta(saida)) return <CardAnaliseMultiConta dado={saida} />;
+  if (ehAnaliseConta(saida)) return <CardAnaliseConta dado={saida} />;
+
   if (Array.isArray(saida)) {
     if (saida.length === 0) return <p className="text-[11px] text-[var(--color-tinta-fraca)]">lista vazia.</p>;
     const primeiroItem = saida[0];
-    const campoNome = typeof primeiroItem === "object" && primeiroItem !== null ? Object.keys(primeiroItem).find((k) => /nome|name/i.test(k)) : null;
+    const ehObjeto = typeof primeiroItem === "object" && primeiroItem !== null;
+    const campoNome = ehObjeto ? Object.keys(primeiroItem as object).find((k) => /nome|^name$/i.test(k)) : null;
+    const campoStatus = ehObjeto ? Object.keys(primeiroItem as object).find((k) => /status|estado/i.test(k)) : null;
 
     return (
       <div className="rolagem max-h-56 overflow-auto">
         <p className="mono mb-1 text-[9px] tracking-[0.1em] text-[var(--color-tinta-fraca)]">{saida.length} ITEM(NS)</p>
         <ul className="flex flex-col gap-0.5">
-          {saida.slice(0, 25).map((item, i) => (
-            <li key={i} className="text-[11px] text-[var(--color-tinta)]">
-              {campoNome && typeof item === "object" && item !== null ? String((item as Record<string, unknown>)[campoNome]) : JSON.stringify(item).slice(0, 120)}
-            </li>
-          ))}
+          {saida.slice(0, 25).map((item, i) => {
+            const registro = ehObjeto ? (item as Record<string, unknown>) : null;
+            const nome = campoNome && registro ? String(registro[campoNome]) : null;
+            const statusValor = campoStatus && registro ? registro[campoStatus] : null;
+            return (
+              <li key={i} className="flex items-center justify-between gap-2 text-[11px] text-[var(--color-tinta)]">
+                <span>{nome ?? JSON.stringify(item).slice(0, 120)}</span>
+                {statusValor !== null && statusValor !== undefined && (
+                  <span className="mono shrink-0 text-[9px] text-[var(--color-tinta-fraca)]">{String(statusValor) === "1" ? "ATIVA" : String(statusValor)}</span>
+                )}
+              </li>
+            );
+          })}
           {saida.length > 25 && <li className="text-[10px] text-[var(--color-tinta-fraca)]">+ {saida.length - 25} outros…</li>}
         </ul>
       </div>
