@@ -16,6 +16,7 @@ import "@/lib/jobs/registro-handlers";
 import { ultimoResultadoDaConversa, filtrarResultado } from "@/lib/jobs/resultados";
 import { orquestrar } from "@/lib/orquestrador/orquestrador";
 import { interpretarComandoDerivado } from "@/lib/orquestrador/interpretador";
+import { listarCapacidadesDisponiveis } from "@/lib/orquestrador/capacidades";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -304,6 +305,9 @@ export async function POST(req: Request) {
             },
             // Bloco volátil — contexto recuperado desta pergunta.
             ...(contexto.bloco ? [{ type: "text" as const, text: contexto.bloco }] : []),
+            // Capacidades reais (Fase 27e) — sempre gerado de novo, nunca cacheado
+            // como o núcleo (disponibilidade muda a cada request).
+            { type: "text" as const, text: blocoCapacidadesReais() },
             // Instrução de voz: concisa por padrão, sem truncar o texto depois —
             // é o próprio modelo que gera curto, não um corte artificial nosso.
             ...(corpo.voz
@@ -379,6 +383,44 @@ export async function POST(req: Request) {
       "Cache-Control": "no-store",
     },
   });
+}
+
+/**
+ * Achado real (Fase 27e, testando em produção): a conversa comum (quando a
+ * mensagem não bate nenhum gatilho de orquestrador) chama o Claude SEM
+ * `tools` e sem NENHUMA descrição do que o Jarvis realmente tem registrado
+ * — resultado observado ao vivo: o Cacique pergunta "você já consegue
+ * acessar minhas contas do Meta?" e o Claude nega tudo com confiança
+ * ("não tenho aqui nenhuma ferramenta conectada"), porque de fato, NESTA
+ * chamada específica, ele não tem — mas a resposta é enganosa: a
+ * capacidade EXISTE no Tool Registry, só não foi invocada nesta mensagem
+ * porque ela não bateu num gatilho de orquestrador (ver
+ * perguntaSobreMetaOuGoogleAds acima). Consertar isso ampliando gatilho
+ * por gatilho é bater cabeça pra sempre — a correção na raiz é dar pro
+ * Claude consciência REAL (gerada a cada request, direto do registro,
+ * nunca texto estático) do que existe, pra ele parar de inventar limite
+ * que não existe e explicar corretamente que a execução passa por um Job
+ * orquestrado, não uma function call direta nesta conversa.
+ *
+ * Nunca no bloco ESTÁVEL do núcleo (nucleo.ts) — disponibilidade muda a
+ * cada request (token pode cair, credencial pode faltar), então isto
+ * precisa ser volátil, gerado de novo sempre, nunca cacheado como fato
+ * permanente.
+ */
+function blocoCapacidadesReais(): string {
+  const capacidades = listarCapacidadesDisponiveis();
+  const linhas = capacidades
+    .filter((c) => c.disponibilidade !== "NAO_IMPLEMENTADO")
+    .map((c) => `- ${c.capacidade} [${c.disponibilidade}]: ${c.descricao}`)
+    .join("\n");
+  return `## CAPACIDADES REGISTRADAS AGORA (real, direto do Tool Registry — nunca desatualizado)
+Estas são as capacidades que o Jarvis TEM de verdade neste momento, com o status real de cada uma:
+
+${linhas || "(nenhuma capacidade implementada retornou disponibilidade — registro vazio ou erro)"}
+
+Leitura dos status: DISPONIVEL = roda direto. REQUER_APROVACAO = existe e funciona, mas mutações reais (gastar dinheiro de cliente, pausar campanha, enviar mensagem) sempre param pedindo aprovação explícita antes de executar — isso é comportamento correto, não limitação quebrada. REQUER_CREDENCIAL = existe no código mas falta uma chave/token configurado.
+
+IMPORTANTE: se o Cacique perguntar algo que bate com uma capacidade acima, você TEM acesso técnico a isso — nunca negue a existência da capacidade. A execução real acontece por trás de um Job orquestrado (não uma function call direta nesta mensagem específica) — se ele perguntar e a resposta não vier automaticamente, oriente a perguntar de forma mais direta/específica (ex: "quais campanhas tem a conta X", "analise a conta Y") em vez de dizer que não existe integração nenhuma.`;
 }
 
 /** Forma enxuta do contexto resolvido que vai pro cliente — sem os regexes internos. */
