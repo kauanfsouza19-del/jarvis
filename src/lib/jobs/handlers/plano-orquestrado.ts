@@ -14,6 +14,7 @@ import { listarProspects } from "../../prospeccao/repositorio";
 import { fecharResultadoDeProspects, fecharResultadoGenerico } from "../resultados";
 import { rotear, chamarComFallback, algumProvedorDisponivel } from "../../modelo/roteador";
 import { db } from "../../dados/db";
+import { obterContextoMetaDaConversa } from "../../contexto/meta-contexto";
 import {
   registrarHandler,
   atualizarJob,
@@ -627,6 +628,23 @@ async function executarPasso(jobId: string, objetivo: string, passo: PlanoPasso)
 
   try {
     const entrada = JSON.parse(passo.entrada);
+
+    // Achado real (Fase 27g, testando "abre a conta da Klein" -> "quais
+    // campanhas essa conta tem?" em produção): o Planejador por modelo
+    // monta os passos TODOS de antemão, antes de qualquer execução real —
+    // ele não tem como saber o valor de saída do passo 0 pra preencher o
+    // `contaId` do passo 1 (não existe templating de passo-pra-passo neste
+    // motor ainda), então deixa `contaId: ""` e o passo falha. Correção na
+    // EXECUÇÃO (não no plano): se `entrada.contaId` está vazio/ausente e a
+    // conversa tem uma conta Meta selecionada (ver meta_ads.selecionar_
+    // conta), preenche aqui — funciona pra QUALQUER capacidade Meta Ads
+    // futura que peça `contaId`, não só as duas testadas agora.
+    if (typeof entrada === "object" && entrada !== null && "contaId" in entrada && !(entrada as { contaId?: unknown }).contaId) {
+      const job = db().prepare(`SELECT conversa_id FROM jobs WHERE id = ?`).get(jobId) as { conversa_id: string | null } | undefined;
+      const contexto = job?.conversa_id ? obterContextoMetaDaConversa(job.conversa_id) : null;
+      if (contexto) (entrada as { contaId: string }).contaId = contexto.contaMetaId;
+    }
+
     if (!ferramenta.validarEntrada(entrada)) throw new Error("entrada inválida para a ferramenta");
     const resultado = await ferramenta.executar!(entrada);
     if (!resultado.ok) {
