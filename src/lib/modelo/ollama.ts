@@ -2,7 +2,7 @@ import "server-only";
 import type { ModelProvider, CapacidadeDescricao, PlanoProposto, InterpretacaoResultado, DecisaoProximoPasso } from "./provedor";
 import { validarPlanoProposto, validarInterpretacao, validarDecisao, validarSemanticaPlano } from "./validacao";
 import { registrarChamadaModelo } from "./uso";
-import { registrarFalhaTransitoria, limparEstadoTransitorio } from "./registro";
+import { registrarFalhaTransitoria, registrarSucessoTransitorio } from "./registro";
 import { modeloSelecionadoAtual } from "../jobs/contexto-execucao";
 
 /**
@@ -62,7 +62,7 @@ async function verificarServicoLocal(): Promise<boolean> {
 
 /** Mantém o estado transitório compartilhado sincronizado com o cache real — chamado depois de toda checagem, nunca só na primeira. */
 function sincronizarEstadoCompartilhado(disponivel: boolean): void {
-  if (disponivel) limparEstadoTransitorio("ollama");
+  if (disponivel) registrarSucessoTransitorio("ollama");
   else registrarFalhaTransitoria("ollama", "TEMPORARILY_UNAVAILABLE");
 }
 
@@ -135,7 +135,7 @@ class ProvedorOllama implements ModelProvider {
       throw new Error(`Ollama respondeu HTTP ${resp.status} — modelo "${modelo}" instalado? (ollama pull ${modelo})`);
     }
 
-    limparEstadoTransitorio("ollama");
+    registrarSucessoTransitorio("ollama");
     const dados = (await resp.json()) as { message?: { content?: string }; prompt_eval_count?: number; eval_count?: number };
     registrarChamadaModelo({
       provedor: this.nome,

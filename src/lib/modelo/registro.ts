@@ -215,6 +215,26 @@ export function limparEstadoTransitorio(provedorId: string): void {
   estadoTransitorio.delete(provedorId);
 }
 
+/**
+ * Achado real (Fase 29, testando Ollama de verdade pela primeira vez
+ * nesta sessão): pra provedor SEM credencial (credencialEnv null — só
+ * Ollama até agora), `disponibilidadeDoProvedor` só sabe reportar
+ * "TEMPORARILY_UNAVAILABLE" como default honesto até o PRIMEIRO estado
+ * ser registrado — mas o único jeito de registrar estado antes desta
+ * função existir era `registrarFalhaTransitoria` (só negativo) ou
+ * `limparEstadoTransitorio` (que só APAGA um estado ruim, nunca GRAVA um
+ * bom). Resultado real observado: Ollama rodando de verdade, respondendo
+ * (`verificarDisponibilidadeOllama()` retornando true), e o status
+ * continuava "TEMPORARILY_UNAVAILABLE" pra sempre — porque limpar nunca
+ * é a mesma coisa que confirmar. Esta função é o positivo que faltava:
+ * mesma janela de expiração de qualquer estado transitório (nunca
+ * permanente — o serviço local pode cair a qualquer momento, por isso
+ * "AVAILABLE" aqui também expira e precisa ser reconfirmado).
+ */
+export function registrarSucessoTransitorio(provedorId: string): void {
+  estadoTransitorio.set(provedorId, { status: "AVAILABLE", expiraEm: Date.now() + JANELA_ESTADO_TRANSITORIO_MS });
+}
+
 export function disponibilidadeDoProvedor(provedorId: string): StatusProvedor {
   const provedor = PROVEDORES.find((p) => p.id === provedorId);
   if (!provedor) return "DISABLED";
