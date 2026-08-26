@@ -214,7 +214,11 @@ const INTENCOES: Array<[Intencao, RegExp]> = [
   // não fazem sentido fora desse domínio (business manager, pixel,
   // conta de anúncio) — adicionados como alternativas ESPECÍFICAS, nunca
   // "meta" isolado.
-  ["AUDITORIA_ADS", /\b(campanh|an[uú]nci|google ads|meta ads|adwords|palavra-?chave|negativa|lance|cpa|cpc|roas|ctr|conjunto de an[uú]ncio|audit|\bno meta\b|\bdo meta\b|business manager|\bpixel\b|contas? de an[uú]ncio|contas? (do |no )?meta ads)/],
+  // "abre/seleciona/troca/usa/foca a conta [da X]" (Fase 27g, testando ao
+  // vivo): "conta" combinado com verbo de seleção é inequívoco neste
+  // sistema — não existe outro conceito de "conta" no vocabulário do
+  // Jarvis (não é banco) — nunca precisa de "meta"/"anúncio" junto.
+  ["AUDITORIA_ADS", /\b(campanh|an[uú]nci|google ads|meta ads|adwords|palavra-?chave|negativa|lance|cpa|cpc|roas|ctr|conjunto de an[uú]ncio|audit|\bno meta\b|\bdo meta\b|business manager|\bpixel\b|contas? de an[uú]ncio|contas? (do |no )?meta ads|abr(e|ir) a conta|selecion(a|ar) a conta|troc(a|ar) (pra |para )?a conta|usa(r)? a conta|foc(a|ar) (na |a )?conta)/],
   ["PRODUCAO_CRIATIVA", /\b(criativ|copy|headline|hook|gancho|vsl|roteiro|thumb|carrossel|est[eé]tica|arte|pe[cç]a|storyboard|legenda)/],
   ["PRODUTO", /\b(onboarding|feature|funcionalidade|tela|fluxo do (app|produto|usu[aá]rio)|ux do produto|bug|backlog|roadmap|cadastro|checkout)/],
   ["ESTRATEGIA", /\b(posicionament|estrat[eé]gi|pre[cç]ific|oferta|funil|lan[cç]amento|concorr|mercado|proposta de valor|icp)/],
