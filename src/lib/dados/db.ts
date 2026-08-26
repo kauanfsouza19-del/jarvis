@@ -770,6 +770,42 @@ function migrar(d: DatabaseSync) {
   // — a relação declarada Cliente↔Pasta do Drive↔Conta/Campanha Meta.
   // JARVIS nunca decide essa relação sozinho: uma linha aqui é sempre
   // configuração explícita do Cacique, nunca inferida de nome de pasta.
+  // Contexto operacional de conta Meta por conversa (Fase 27f) — "abre a
+  // conta da Klein" precisa sobreviver pros próximos turnos da MESMA
+  // conversa sem o Cacique repetir o ID. Vive na PRÓPRIA linha de
+  // `conversas` (não uma tabela separada) porque é 1:1 com a conversa,
+  // igual `projeto_id`/`modo` já são — nunca histórico, sempre "estado
+  // atual". ALTER guardado por PRAGMA table_info porque `esquema.ts` já
+  // definiu `conversas` antes desta fase (banco existente nunca re-roda
+  // o CREATE TABLE original).
+  const colunasConversas = new Set(
+    (d.prepare("PRAGMA table_info(conversas)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!colunasConversas.has("conta_meta_selecionada")) {
+    d.exec("ALTER TABLE conversas ADD COLUMN conta_meta_selecionada TEXT");
+  }
+  if (!colunasConversas.has("cliente_meta_selecionado_nome")) {
+    d.exec("ALTER TABLE conversas ADD COLUMN cliente_meta_selecionado_nome TEXT");
+  }
+
+  // Registro Cliente -> Conta Meta (Fase 27f) — a mesma relação que
+  // fontes_criativo já carrega (cliente/conta_meta_id), mas SEM exigir
+  // pasta do Drive (fontes_criativo é sobre automação de criativo,
+  // NOT NULL em drive_folder_id de propósito; aqui é só "qual conta é a
+  // da Klein", precisa existir mesmo sem Drive conectado). Nunca duplica
+  // fontes_criativo — são conceitos diferentes que só compartilham duas
+  // colunas; quando o Drive existir, o Cacique pode registrar uma Fonte
+  // de Criativo separadamente reaproveitando o mesmo nome de cliente.
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS clientes_meta_contas (
+      id            TEXT PRIMARY KEY,
+      cliente       TEXT NOT NULL,
+      conta_meta_id TEXT NOT NULL,
+      criado_em     TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  d.exec("CREATE INDEX IF NOT EXISTS idx_clientes_meta_contas_cliente ON clientes_meta_contas(cliente)");
+
   d.exec(`
     CREATE TABLE IF NOT EXISTS fontes_criativo (
       id                       TEXT PRIMARY KEY,

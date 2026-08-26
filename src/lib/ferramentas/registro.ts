@@ -66,6 +66,15 @@ import {
   type ResultadoIngestao,
   type ResultadoEnvioCriativo,
 } from "./criativos";
+import {
+  definirContextoMetaDaConversa,
+  registrarClienteConta,
+  resolverClienteParaConta,
+  listarClientesContas,
+  type ClienteConta,
+} from "../contexto/meta-contexto";
+import { jobIdAtual } from "../jobs/contexto-execucao";
+import { db } from "../dados/db";
 import type { Criativo, FonteCriativo, NovaFonteCriativo } from "../criativos/biblioteca";
 import type { Ferramenta, ResultadoFerramenta } from "./tipos";
 
@@ -985,6 +994,78 @@ const metaAdsAnalisarCampanhas: Ferramenta<{ insights: InsightCampanhaMeta[]; ca
   },
 };
 
+/* ── Contexto de conta Meta por conversa (Fase 27f) ──
+ * "Abre a conta da Klein" -> "Analisa ela" -> "Cria uma campanha" sem
+ * repetir ID. Usa jobIdAtual() (AsyncLocalStorage, já estabelecido desde
+ * a Fase 7/8 pra modelo/roteador) pra descobrir em qual conversa esta
+ * execução está rodando, sem precisar mudar a assinatura de Ferramenta —
+ * mesmo padrão já usado por modeloSelecionadoAtual() etc.
+ */
+
+function conversaIdDoJobAtual(): string | null {
+  const jobId = jobIdAtual();
+  if (!jobId) return null;
+  const row = db().prepare(`SELECT conversa_id FROM jobs WHERE id = ?`).get(jobId) as { conversa_id: string | null } | undefined;
+  return row?.conversa_id ?? null;
+}
+
+const metaAdsSelecionarConta: Ferramenta<{ cliente?: string; contaMetaId?: string }, { contaMetaId: string; clienteNome: string | null }> = {
+  nome: "meta_ads.selecionar_conta",
+  descricao:
+    "Marca uma conta Meta Ads como 'em foco' nesta conversa (por nome de cliente já registrado ou por ID direto) — próximas perguntas/ações nesta mesma conversa usam essa conta sem repetir o ID. Nunca toca a conta em si, só memória local da conversa.",
+  capacidade: "selecionar_conta_meta_ads",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: false, // estado local da conversa, nunca efeito externo
+  implementado: true,
+  validarEntrada: (e): e is { cliente?: string; contaMetaId?: string } => typeof e === "object" && e !== null,
+  executar: async (entrada) => {
+    const conversaId = conversaIdDoJobAtual();
+    if (!conversaId) return { ok: false, erro: "esta execução não está associada a uma conversa — nada pra lembrar" };
+
+    if (entrada.contaMetaId) {
+      definirContextoMetaDaConversa(conversaId, entrada.contaMetaId, entrada.cliente ?? null);
+      return { ok: true, saida: { contaMetaId: entrada.contaMetaId, clienteNome: entrada.cliente ?? null } };
+    }
+    if (!entrada.cliente) return { ok: false, erro: "informe 'cliente' (nome) ou 'contaMetaId' (ID direto)" };
+
+    const resolvido = resolverClienteParaConta(entrada.cliente);
+    if (!resolvido) return { ok: false, erro: `nenhum cliente registrado bate com "${entrada.cliente}" — use meta_ads.registrar_cliente_conta primeiro` };
+    if ("ambiguo" in resolvido) return { ok: false, erro: `"${entrada.cliente}" bate com mais de um cliente registrado (${resolvido.ambiguo.map((c) => c.cliente).join(", ")}) — seja mais específico` };
+
+    definirContextoMetaDaConversa(conversaId, resolvido.conta.conta_meta_id, resolvido.conta.cliente);
+    return { ok: true, saida: { contaMetaId: resolvido.conta.conta_meta_id, clienteNome: resolvido.conta.cliente } };
+  },
+};
+
+const metaAdsRegistrarClienteConta: Ferramenta<{ cliente: string; contaMetaId: string }, ClienteConta> = {
+  nome: "meta_ads.registrar_cliente_conta",
+  descricao: "Registra a relação Cliente -> Conta Meta Ads (ex: 'Klein' -> act_818013916024302), pra reconhecer o cliente pelo nome depois. SEMPRE exige aprovação explícita: liga um nome de negócio a uma conta real.",
+  capacidade: "gerenciar_clientes_meta_ads",
+  nivelPermissao: "WRITE",
+  exigeAprovacaoExplicita: true,
+  implementado: true,
+  validarEntrada: (e): e is { cliente: string; contaMetaId: string } =>
+    typeof e === "object" && e !== null && typeof (e as { cliente?: unknown }).cliente === "string" && typeof (e as { contaMetaId?: unknown }).contaMetaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: registrarClienteConta(entrada.cliente, entrada.contaMetaId) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao registrar cliente" };
+    }
+  },
+};
+
+const metaAdsListarClientesContas: Ferramenta<Record<string, never>, ClienteConta[]> = {
+  nome: "meta_ads.listar_clientes_contas",
+  descricao: "Lista os clientes já registrados com a conta Meta Ads correspondente.",
+  capacidade: "listar_clientes_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  validarEntrada: (e): e is Record<string, never> => typeof e === "object" && e !== null,
+  executar: async () => ({ ok: true, saida: listarClientesContas() }),
+};
+
 /* ── Google Drive (Fase 27b) — só leitura, allowlist de pasta nunca livre ──
  * `folderId` sempre vem de uma Fonte de Criativo registrada OU de um ID
  * que o Cacique forneceu explicitamente — nunca varredura livre do Drive
@@ -1204,6 +1285,9 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   metaAdsListarPaginas as unknown as Ferramenta,
   metaAdsListarPixels as unknown as Ferramenta,
   metaAdsAnalisarCampanhas as unknown as Ferramenta,
+  metaAdsSelecionarConta as unknown as Ferramenta,
+  metaAdsRegistrarClienteConta as unknown as Ferramenta,
+  metaAdsListarClientesContas as unknown as Ferramenta,
   driveListarArquivosPasta as unknown as Ferramenta,
   criativosListar as unknown as Ferramenta,
   criativosListarFontes as unknown as Ferramenta,

@@ -17,6 +17,7 @@ import { ultimoResultadoDaConversa, filtrarResultado } from "@/lib/jobs/resultad
 import { orquestrar } from "@/lib/orquestrador/orquestrador";
 import { interpretarComandoDerivado } from "@/lib/orquestrador/interpretador";
 import { listarCapacidadesDisponiveis } from "@/lib/orquestrador/capacidades";
+import { obterContextoMetaDaConversa } from "@/lib/contexto/meta-contexto";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -52,6 +53,17 @@ export async function POST(req: Request) {
   const lexico = construirLexico();
   const timeline = timelineDaConversa(corpo.conversa_id);
   const resolvido = resolverContexto(mensagem, lexico, timeline);
+
+  // Contexto operacional de conta Meta (Fase 27f) — "Abre a conta da Klein"
+  // grava isto (ver meta_ads.selecionar_conta); qualquer mensagem seguinte
+  // NESTA conversa reaproveita sem repetir ID. Nunca aplicado ao texto
+  // PERSISTIDO (adicionarMensagem abaixo usa `mensagem` puro) — só ao
+  // objetivo que o Orquestrador/planejador recebe.
+  const contextoMeta = obterContextoMetaDaConversa(corpo.conversa_id);
+  const prefixoContextoMeta = contextoMeta
+    ? `[Contexto ativo nesta conversa: conta Meta Ads selecionada é ${contextoMeta.clienteNome ?? contextoMeta.contaMetaId} (ID real: ${contextoMeta.contaMetaId}) — use esta conta quando a pergunta não especificar outra explicitamente.]\n\n`
+    : "";
+  const mensagemComContexto = prefixoContextoMeta + mensagem;
 
   // Override explícito (clique no chip) vence a inferência, mas não apaga o
   // resto do que foi resolvido — só substitui o projeto.
@@ -208,7 +220,7 @@ export async function POST(req: Request) {
     analiseDoProprioJarvis ||
     perguntaSobreMetaOuGoogleAds
   ) {
-    const orquestrado = await orquestrar(corpo.conversa_id, mensagem, resolvido);
+    const orquestrado = await orquestrar(corpo.conversa_id, mensagemComContexto, resolvido);
     if (orquestrado) {
       const texto = orquestrado.jobId
         ? `Entendi. ${orquestrado.resumoRaciocinio}`
@@ -308,6 +320,10 @@ export async function POST(req: Request) {
             // Capacidades reais (Fase 27e) — sempre gerado de novo, nunca cacheado
             // como o núcleo (disponibilidade muda a cada request).
             { type: "text" as const, text: blocoCapacidadesReais() },
+            // Contexto de conta Meta selecionada (Fase 27f) — mesma informação
+            // que vai pro Orquestrador, também disponível na conversa comum
+            // (ex: "abre a Klein" seguido de "e o CTR médio?" sem repetir).
+            ...(prefixoContextoMeta ? [{ type: "text" as const, text: prefixoContextoMeta.trim() }] : []),
             // Instrução de voz: concisa por padrão, sem truncar o texto depois —
             // é o próprio modelo que gera curto, não um corte artificial nosso.
             ...(corpo.voz
