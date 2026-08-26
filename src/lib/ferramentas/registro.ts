@@ -1009,28 +1009,48 @@ function conversaIdDoJobAtual(): string | null {
   return row?.conversa_id ?? null;
 }
 
-const metaAdsSelecionarConta: Ferramenta<{ cliente?: string; contaMetaId?: string }, { contaMetaId: string; clienteNome: string | null }> = {
+/**
+ * Achado real (Fase 27h, testando "abre a conta da Klein" em produção): o
+ * Planejador por modelo mandou `{"nomeCliente":"Klein"}` — nome de campo
+ * plausível, mas diferente do que a Tool esperava (`cliente`). Nenhuma
+ * quantidade de texto na descrição garante nome de campo idêntico (o
+ * modelo GERA o JSON, não segue um schema rígido nesta fase) — a correção
+ * robusta é aceitar os apelidos plausíveis aqui dentro, nunca depender só
+ * de prompt engineering pra isso.
+ */
+function extrairCampoTexto(entrada: Record<string, unknown>, chaves: string[]): string | undefined {
+  for (const chave of chaves) {
+    const v = entrada[chave];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+const metaAdsSelecionarConta: Ferramenta<Record<string, unknown>, { contaMetaId: string; clienteNome: string | null }> = {
   nome: "meta_ads.selecionar_conta",
   descricao:
-    "Marca uma conta Meta Ads como 'em foco' nesta conversa (por nome de cliente já registrado ou por ID direto) — próximas perguntas/ações nesta mesma conversa usam essa conta sem repetir o ID. Nunca toca a conta em si, só memória local da conversa.",
+    "Marca uma conta Meta Ads como 'em foco' nesta conversa (por nome de cliente já registrado em cliente/nomeCliente/nome, ou por ID direto em contaMetaId/contaId) — próximas perguntas/ações nesta mesma conversa usam essa conta sem repetir o ID. Nunca toca a conta em si, só memória local da conversa.",
   capacidade: "selecionar_conta_meta_ads",
   nivelPermissao: "WRITE",
   exigeAprovacaoExplicita: false, // estado local da conversa, nunca efeito externo
   implementado: true,
-  validarEntrada: (e): e is { cliente?: string; contaMetaId?: string } => typeof e === "object" && e !== null,
+  validarEntrada: (e): e is Record<string, unknown> => typeof e === "object" && e !== null,
   executar: async (entrada) => {
     const conversaId = conversaIdDoJobAtual();
     if (!conversaId) return { ok: false, erro: "esta execução não está associada a uma conversa — nada pra lembrar" };
 
-    if (entrada.contaMetaId) {
-      definirContextoMetaDaConversa(conversaId, entrada.contaMetaId, entrada.cliente ?? null);
-      return { ok: true, saida: { contaMetaId: entrada.contaMetaId, clienteNome: entrada.cliente ?? null } };
-    }
-    if (!entrada.cliente) return { ok: false, erro: "informe 'cliente' (nome) ou 'contaMetaId' (ID direto)" };
+    const contaMetaId = extrairCampoTexto(entrada, ["contaMetaId", "conta_meta_id", "contaId", "accountId"]);
+    const cliente = extrairCampoTexto(entrada, ["cliente", "nomeCliente", "nome", "clienteNome", "client"]);
 
-    const resolvido = resolverClienteParaConta(entrada.cliente);
-    if (!resolvido) return { ok: false, erro: `nenhum cliente registrado bate com "${entrada.cliente}" — use meta_ads.registrar_cliente_conta primeiro` };
-    if ("ambiguo" in resolvido) return { ok: false, erro: `"${entrada.cliente}" bate com mais de um cliente registrado (${resolvido.ambiguo.map((c) => c.cliente).join(", ")}) — seja mais específico` };
+    if (contaMetaId) {
+      definirContextoMetaDaConversa(conversaId, contaMetaId, cliente ?? null);
+      return { ok: true, saida: { contaMetaId, clienteNome: cliente ?? null } };
+    }
+    if (!cliente) return { ok: false, erro: "informe o nome do cliente ou o ID direto da conta" };
+
+    const resolvido = resolverClienteParaConta(cliente);
+    if (!resolvido) return { ok: false, erro: `nenhum cliente registrado bate com "${cliente}" — use meta_ads.registrar_cliente_conta primeiro` };
+    if ("ambiguo" in resolvido) return { ok: false, erro: `"${cliente}" bate com mais de um cliente registrado (${resolvido.ambiguo.map((c) => c.cliente).join(", ")}) — seja mais específico` };
 
     definirContextoMetaDaConversa(conversaId, resolvido.conta.conta_meta_id, resolvido.conta.cliente);
     return { ok: true, saida: { contaMetaId: resolvido.conta.conta_meta_id, clienteNome: resolvido.conta.cliente } };
