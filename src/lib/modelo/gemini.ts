@@ -12,13 +12,14 @@ import { modeloSelecionadoAtual } from "../jobs/contexto-execucao";
  * gratuitas" — o Gemini tem tier gratuito de verdade pro modelo Flash
  * (ai.google.dev), diferente de Anthropic/OpenAI que são só pré-pago.
  *
- * Sem GOOGLE_GEMINI_API_KEY (não configurada neste ambiente), `disponivel()`
- * honesto reporta false — nenhuma chamada é tentada, nunca finge sucesso.
- * Código nunca testado contra a API real nesta sessão (documentado no
- * relatório da fase, não escondido) — mesma ressalva já feita pro OpenAI.
+ * Testado contra a API real na Fase 29 (chave configurada, chamada de
+ * verdade feita) — achado real: "gemini-2.0-flash" (modelo registrado
+ * desde a Fase 17) foi descontinuado pela própria Google; a resposta de
+ * erro da API (404) recomendou "gemini-3.6-flash" no lugar, testado e
+ * confirmado funcionando (resposta real recebida) antes de trocar aqui.
  */
 
-const MODELO_PADRAO = "gemini-2.0-flash";
+const MODELO_PADRAO = "gemini-3.6-flash";
 
 function endpoint(modelo: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;

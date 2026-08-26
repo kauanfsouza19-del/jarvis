@@ -128,8 +128,11 @@ export const MODELOS_REGISTRO: ModeloRegistro[] = [
   // a própria API responde 429 (RESOURCE_EXHAUSTED) e o Router já sabe
   // tratar isso como QUOTA_EXCEEDED (ver gemini.ts) — nunca finge uso
   // ilimitado, só não cobra custo fictício enquanto está dentro da cota.
+  // modeloId atualizado na Fase 29: "gemini-2.0-flash" foi descontinuado
+  // pela Google (confirmado por erro 404 real da API) — "gemini-3.6-flash"
+  // testado e funcionando de verdade antes da troca.
   {
-    modeloId: "gemini-2.0-flash",
+    modeloId: "gemini-3.6-flash",
     provedorId: "gemini",
     tier: "CHEAP",
     custoPor1M: { entrada: 0, saida: 0 },
