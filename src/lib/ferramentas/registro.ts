@@ -56,6 +56,7 @@ import {
   type PixelMeta,
 } from "./meta-ads";
 import { analisarCampanhas, THRESHOLDS_PADRAO, type ResultadoAnaliseOtimizacao, type ThresholdsOtimizacao } from "./meta-otimizacao";
+import { analisarContaMeta, analisarTodasContasMeta, type ResultadoAnaliseConta, type ResultadoAnaliseMultiConta } from "./meta-analise-conta";
 import { listarArquivosPasta, type ArquivoDrive } from "../google/drive";
 import {
   ingerirCriativosDaFonte,
@@ -994,6 +995,48 @@ const metaAdsAnalisarCampanhas: Ferramenta<{ insights: InsightCampanhaMeta[]; ca
   },
 };
 
+/* ── Análise de conta composta (Fase 28) — busca dado real + roda o motor
+ * de otimização NUMA SÓ Tool, sem depender de encadeamento entre passos
+ * de um Plano (ver meta-analise-conta.ts pro achado real por trás disso).
+ * É isto que faz "Analisa a conta da Klein" e "Analisa todas as minhas
+ * contas" funcionar em UMA chamada confiável.
+ */
+const metaAdsAnalisarConta: Ferramenta<{ contaId: string; datePreset?: string }, ResultadoAnaliseConta> = {
+  nome: "meta_ads.analisar_conta",
+  descricao: "Analisa UMA conta Meta Ads de ponta a ponta: busca campanhas + insights reais e roda o motor de otimização — devolve achados priorizados (crítico/recomendação/observação) e o resumo de gasto/leads/CPA. contaId no formato act_XXXXXXXXXXX.",
+  capacidade: "analisar_conta_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { contaId: string; datePreset?: string } => typeof e === "object" && e !== null && typeof (e as { contaId?: unknown }).contaId === "string",
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await analisarContaMeta(entrada.contaId, entrada.datePreset) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao analisar conta" };
+    }
+  },
+};
+
+const metaAdsAnalisarTodasContas: Ferramenta<{ datePreset?: string }, ResultadoAnaliseMultiConta> = {
+  nome: "meta_ads.analisar_todas_contas",
+  descricao: "Analisa TODAS as contas Meta Ads ativas acessíveis pelo token configurado (até 30 de uma vez) — mesma análise de meta_ads.analisar_conta pra cada uma, devolve a lista já ordenada por prioridade (mais achados críticos primeiro). Pode demorar alguns segundos — varre várias contas reais.",
+  capacidade: "analisar_todas_contas_meta_ads",
+  nivelPermissao: "READ",
+  exigeAprovacaoExplicita: false,
+  implementado: true,
+  credencialNecessaria: "META_ADS_TOKEN",
+  validarEntrada: (e): e is { datePreset?: string } => typeof e === "object" && e !== null,
+  executar: async (entrada) => {
+    try {
+      return { ok: true, saida: await analisarTodasContasMeta(entrada.datePreset) };
+    } catch (e) {
+      return { ok: false, erro: e instanceof Error ? e.message : "erro ao analisar contas" };
+    }
+  },
+};
+
 /* ── Contexto de conta Meta por conversa (Fase 27f) ──
  * "Abre a conta da Klein" -> "Analisa ela" -> "Cria uma campanha" sem
  * repetir ID. Usa jobIdAtual() (AsyncLocalStorage, já estabelecido desde
@@ -1305,6 +1348,8 @@ export const REGISTRO_FERRAMENTAS: Ferramenta[] = [
   metaAdsListarPaginas as unknown as Ferramenta,
   metaAdsListarPixels as unknown as Ferramenta,
   metaAdsAnalisarCampanhas as unknown as Ferramenta,
+  metaAdsAnalisarConta as unknown as Ferramenta,
+  metaAdsAnalisarTodasContas as unknown as Ferramenta,
   metaAdsSelecionarConta as unknown as Ferramenta,
   metaAdsRegistrarClienteConta as unknown as Ferramenta,
   metaAdsListarClientesContas as unknown as Ferramenta,
